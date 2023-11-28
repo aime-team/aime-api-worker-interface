@@ -1,0 +1,5 @@
+api_worker_interface.egg-info/
+API_Worker_Interface.egg-info/
+api_worker_interface/__pycache__/
+__pycache__/
+!.gitignore

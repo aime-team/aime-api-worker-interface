@@ -1,0 +1,7 @@
+ 
+Run
+
+.. highlight:: shell
+.. code-block:: shell
+
+    pip install git+https://github.com//aime-labs/api_worker_interface
