@@ -412,15 +412,24 @@ class APIWorkerInterface():
             parameter = self.__current_job_data.get(parameter_name)
             if parameter:
                 metadata.add_text(parameter_name, str(parameter))
-        metadata.add_text('Comment', 'Generated with AIME ML API')
+        aime_str = f'AIME API {self.__current_job_data.get("endpoint_name", self.job_type)}'
+        metadata.add_text('Artist', aime_str)
+        metadata.add_text('ProcessingSoftware', aime_str)
+        metadata.add_text('Software', aime_str)
+        metadata.add_text('ImageEditingSoftware', aime_str)
         
         return metadata
 
+
     def get_exif_metadata(self, image):
         metadata = {str(parameter_name): self.__current_job_data.get(parameter_name) for parameter_name in DEFAULT_IMAGE_METADATA}
-        metadata['Generated with:'] = 'AIME ML API'
         exif = image.getexif()
-        exif[0x9286] = json.dumps(metadata)
+        exif[0x9286] = json.dumps(metadata) # Comment Tag
+        aime_str = f'AIME API {self.__current_job_data.get("endpoint_name", self.job_type)}'
+        exif[0x013b] = aime_str # Artist
+        exif[0x000b] = aime_str # ProcessingSoftware
+        exif[0x0131] = aime_str # Software
+        exif[0xa43b] = aime_str # ImageEditingSoftware
         return exif
 
 
