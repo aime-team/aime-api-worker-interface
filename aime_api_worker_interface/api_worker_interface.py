@@ -32,7 +32,7 @@ class MyManager(SyncManager):
 
 
 class APIWorkerInterface():
-    """Interface for deep learning models to communicate with AIME-ML-API.
+    """Interface for deep learning models to communicate with AIME API Server.
 
     Args:
         api_server (str): Address of API Server. Example: 'http://api.aime.team'.
@@ -59,7 +59,7 @@ class APIWorkerInterface():
         .. highlight:: python
         .. code-block:: python            
 
-            from api_worker_interface import APIWorkerInterface
+            from aime_api_worker_interface import APIWorkerInterface
                 
             api_worker = APIWorkerInterface('http://api.aime.team', 'llama2_chat', <auth_key>)
             while True:
@@ -72,7 +72,7 @@ class APIWorkerInterface():
         .. highlight:: python
         .. code-block:: python
 
-            from api_worker_interface import APIWorkerInterface           
+            from aime_api_worker_interface import APIWorkerInterface           
 
             api_worker = APIWorkerInterface('http://api.aime.team', 'llama2_chat', <auth_key>)
             while True:
@@ -91,7 +91,7 @@ class APIWorkerInterface():
         .. highlight:: python
         .. code-block:: python
 
-            from api_worker_interface import APIWorkerInterface
+            from aime_api_worker_interface import APIWorkerInterface
 
             def progress_callback(api_worker, progress, progress_data):
                 if api_worker.progress_data_received:
@@ -111,7 +111,7 @@ class APIWorkerInterface():
         .. highlight:: python
         .. code-block:: python
 
-            from api_worker_interface import APIWorkerInterface
+            from aime_api_worker_interface import APIWorkerInterface
 
             class Callback():
 
@@ -149,7 +149,8 @@ class APIWorkerInterface():
         gpu_name=None, 
         image_metadata_params=DEFAULT_IMAGE_METADATA,
         print_server_status = True,
-        request_timeout = 60
+        request_timeout = 60,
+        worker_version=0
         ):
         """Constructor
 
@@ -182,6 +183,7 @@ class APIWorkerInterface():
         self.print_server_status = print_server_status
         self.async_check_server_connection(terminal_output = print_server_status)
         self.request_timeout = request_timeout
+        self.worker_version = worker_version
         self.version = self.get_version()
 
 
@@ -232,6 +234,7 @@ class APIWorkerInterface():
                     'job_type': self.job_type,
                     'auth_key': self.auth_key,
                     'version': self.version,
+                    'worker_version': self.worker_version,
                     'request_timeout': self.request_timeout
                 }
                 try:
@@ -687,8 +690,8 @@ class APIWorkerInterface():
 
 
     def __async_fetch_callback(self, response):
-        """Is called when API server sent a response from __fetch_async. 
-        Sets progress_data_received = True and calls __custom_callback, if given to ApiWorkerInterface
+        """Is called when API server sent a response to __fetch_async. 
+        Sets progress_data_received = True and calls __custom_callback, if given to APIWorkerInterface
 
         Args:
             response (requests.models.Response): Http response from API server.
@@ -712,7 +715,7 @@ class APIWorkerInterface():
 
     def __async_fetch_error_callback(self, error):
         """Is called when request didn't reach API server is offline. 
-        Sets progress_data_received = True and calls progress_received_callback, if given to ApiWorkerInterface
+        Sets progress_data_received = True and calls progress_received_callback, if given to APIWorkerInterface
 
         Args:
             error (requests.exceptions.ConnectionError): requests.exceptions.ConnectionError
@@ -728,13 +731,18 @@ class APIWorkerInterface():
 
     @staticmethod
     def get_version():
-        """Parses name and version of API Worker Interface with pkg_resources
+        """Parses name and version of AIME API Worker Interface with pkg_resources
 
         Returns:
-            str: Name and version of API Worker Interface
+            str: Name and version of AIME API Worker Interface
         """        
         try:
-            version = str(pkg_resources.get_distribution("api_worker_interface"))
-        except pkg_resources.DistributionNotFound:
-            version = 'API Worker Interface Unknown version, package api_worker_interface not installed via pip'
+            version = str(pkg_resources.get_distribution('aime_api_worker_interface'))
+        except pkg_resources.DistributionNotFound: # If package is not installed via pip
+            import re
+            from pathlib import Path
+            setup_py = Path(__file__).resolve().parent.parent / 'setup.py'
+            with open(setup_py, 'r') as file:                
+                version_no = re.search(r"version\s*=\s*'(.*)'\s*,\s*\n", file.read()).group(1)
+            version = f'AIME API Worker Interface {version_no}'
         return version
