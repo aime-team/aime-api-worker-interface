@@ -1,5 +1,5 @@
 
-Setup API Worker Interface
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Setup AIME API Worker Interface
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. include:: setup.txt

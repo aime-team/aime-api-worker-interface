@@ -1,1 +1,1 @@
-from .api_worker_interface import APIWorkerInterface
+from .api_worker_interface import APIWorkerInterface, DEFAULT_IMAGE_METADATA

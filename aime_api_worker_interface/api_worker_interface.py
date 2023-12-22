@@ -46,8 +46,9 @@ class APIWorkerInterface():
             called when API server sent response to send_progress(..). Defaults to None.
         progress_error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError as argument, 
             called when API server didn't send response from send_progress(..). Defaults to None.
-        image_metadata_params (list, optional): Parameters to add as metadata to images (Currently only 'PNG'). 
-            Defaults to ['prompt', 'negative_prompt', 'seed', ...].
+        image_metadata_params (list, optional): Parameters specific for the used image generator model to add as metadata to the generated image. 
+            Fixed parameters are Artist, ProcessingSoftware, Software, ImageEditingSoftware = AIME API <endpoint_name>. 
+            Defaults to aime_api_worker_interface.DEFAULT_IMAGE_METADATA. 
 
     Attributes:
         progress_data_received (bool): True, if API server sent response to send_progress(), 

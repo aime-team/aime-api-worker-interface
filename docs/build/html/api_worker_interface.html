@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Documentation API Worker Interface &mdash; API Worker Interface 0.3.3 documentation</title>
+  <title>Documentation AIME API Worker Interface &mdash; AIME API Worker Interface 0.3.3 documentation</title>
       <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -20,7 +20,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Examples API Worker Interface" href="examples.html" />
-    <link rel="prev" title="Setup API Worker Interface" href="setup.html" /> 
+    <link rel="prev" title="Setup AIME API Worker Interface" href="setup.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -32,7 +32,7 @@
           
           
           <a href="index.html" class="icon icon-home">
-            API Worker Interface
+            AIME API Worker Interface
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
@@ -45,15 +45,15 @@
               <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="setup.html">Setup</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Documentation</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#api_worker_interface.APIWorkerInterface"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface</span></code></a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#api_worker_interface.APIWorkerInterface.progress_data_received"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.progress_data_received</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#api_worker_interface.APIWorkerInterface.job_request"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.job_request()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#api_worker_interface.APIWorkerInterface.send_job_results"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.send_job_results()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#api_worker_interface.APIWorkerInterface.send_progress"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.send_progress()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#api_worker_interface.APIWorkerInterface.async_check_server_connection"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.async_check_server_connection()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#api_worker_interface.APIWorkerInterface.check_periodically_if_server_online"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.check_periodically_if_server_online()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#api_worker_interface.APIWorkerInterface.get_pnginfo_metadata"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.get_pnginfo_metadata()</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#api_worker_interface.APIWorkerInterface.get_version"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.get_version()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#aime_api_worker_interface.APIWorkerInterface"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface</span></code></a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#aime_api_worker_interface.APIWorkerInterface.progress_data_received"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.progress_data_received</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#aime_api_worker_interface.APIWorkerInterface.job_request"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.job_request()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#aime_api_worker_interface.APIWorkerInterface.send_job_results"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.send_job_results()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#aime_api_worker_interface.APIWorkerInterface.send_progress"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.send_progress()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#aime_api_worker_interface.APIWorkerInterface.async_check_server_connection"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.async_check_server_connection()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#aime_api_worker_interface.APIWorkerInterface.check_periodically_if_server_online"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.check_periodically_if_server_online()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#aime_api_worker_interface.APIWorkerInterface.get_pnginfo_metadata"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.get_pnginfo_metadata()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#aime_api_worker_interface.APIWorkerInterface.get_version"><code class="docutils literal notranslate"><span class="pre">APIWorkerInterface.get_version()</span></code></a></li>
 </ul>
 </li>
 </ul>
@@ -67,7 +67,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="index.html">API Worker Interface</a>
+          <a href="index.html">AIME API Worker Interface</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -75,7 +75,7 @@
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
       <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Documentation API Worker Interface</li>
+      <li class="breadcrumb-item active">Documentation AIME API Worker Interface</li>
       <li class="wy-breadcrumbs-aside">
             <a href="_sources/api_worker_interface.rst.txt" rel="nofollow"> View page source</a>
       </li>
@@ -85,12 +85,12 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
              
-  <section id="documentation-api-worker-interface">
-<h1>Documentation API Worker Interface<a class="headerlink" href="#documentation-api-worker-interface" title="Permalink to this heading"></a></h1>
+  <section id="documentation-aime-api-worker-interface">
+<h1>Documentation AIME API Worker Interface<a class="headerlink" href="#documentation-aime-api-worker-interface" title="Permalink to this heading"></a></h1>
 <dl class="py class">
-<dt class="sig sig-object py" id="api_worker_interface.APIWorkerInterface">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">api_worker_interface.</span></span><span class="sig-name descname"><span class="pre">APIWorkerInterface</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">api_server</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">auth_key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gpu_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">world_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rank</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gpu_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">image_metadata_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">['prompt',</span> <span class="pre">'negative_prompt',</span> <span class="pre">'seed',</span> <span class="pre">'base_steps',</span> <span class="pre">'refine_steps',</span> <span class="pre">'scale',</span> <span class="pre">'aesthetic_score',</span> <span class="pre">'negative_aesthetic_score',</span> <span class="pre">'img2img_strength',</span> <span class="pre">'base_sampler',</span> <span class="pre">'refine_sampler',</span> <span class="pre">'base_discretization',</span> <span class="pre">'refine_discretization']</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_server_status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">request_timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#api_worker_interface.APIWorkerInterface" title="Permalink to this definition"></a></dt>
-<dd><p>Interface for deep learning models to communicate with AIME-ML-API.</p>
+<dt class="sig sig-object py" id="aime_api_worker_interface.APIWorkerInterface">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">aime_api_worker_interface.</span></span><span class="sig-name descname"><span class="pre">APIWorkerInterface</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">api_server</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">auth_key</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gpu_id</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">world_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">rank</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gpu_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">image_metadata_params</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">['prompt',</span> <span class="pre">'negative_prompt',</span> <span class="pre">'seed',</span> <span class="pre">'base_steps',</span> <span class="pre">'refine_steps',</span> <span class="pre">'scale',</span> <span class="pre">'aesthetic_score',</span> <span class="pre">'negative_aesthetic_score',</span> <span class="pre">'img2img_strength',</span> <span class="pre">'base_sampler',</span> <span class="pre">'refine_sampler',</span> <span class="pre">'base_discretization',</span> <span class="pre">'refine_discretization']</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">print_server_status</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">request_timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">60</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">worker_version</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aime_api_worker_interface.APIWorkerInterface" title="Permalink to this definition"></a></dt>
+<dd><p>Interface for deep learning models to communicate with AIME API Server.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
@@ -105,14 +105,15 @@
 called when API server sent response to send_progress(..). Defaults to None.</p></li>
 <li><p><strong>progress_error_callback</strong> (<em>callable</em><em>, </em><em>optional</em>) – Callback function with requests.exceptions.ConnectionError as argument,
 called when API server didn’t send response from send_progress(..). Defaults to None.</p></li>
-<li><p><strong>image_metadata_params</strong> (<em>list</em><em>, </em><em>optional</em>) – Parameters to add as metadata to images (Currently only ‘PNG’).
-Defaults to [‘prompt’, ‘negative_prompt’, ‘seed’, …].</p></li>
+<li><p><strong>image_metadata_params</strong> (<em>list</em><em>, </em><em>optional</em>) – Parameters specific for the used image generator model to add as metadata to the generated image.
+Fixed parameters are Artist, ProcessingSoftware, Software, ImageEditingSoftware = AIME API &lt;endpoint_name&gt;.
+Defaults to aime_api_worker_interface.DEFAULT_IMAGE_METADATA.</p></li>
 </ul>
 </dd>
 </dl>
 <dl class="py attribute">
-<dt class="sig sig-object py" id="api_worker_interface.APIWorkerInterface.progress_data_received">
-<span class="sig-name descname"><span class="pre">progress_data_received</span></span><a class="headerlink" href="#api_worker_interface.APIWorkerInterface.progress_data_received" title="Permalink to this definition"></a></dt>
+<dt class="sig sig-object py" id="aime_api_worker_interface.APIWorkerInterface.progress_data_received">
+<span class="sig-name descname"><span class="pre">progress_data_received</span></span><a class="headerlink" href="#aime_api_worker_interface.APIWorkerInterface.progress_data_received" title="Permalink to this definition"></a></dt>
 <dd><p>True, if API server sent response to send_progress(),
 False while progress data is being transmitted or if an error occured.</p>
 <dl class="field-list simple">
@@ -124,7 +125,7 @@ False while progress data is being transmitted or if an error occured.</p>
 
 <p class="rubric">Examples</p>
 <p>Example usage simple:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">aime_api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
 
 <span class="n">api_worker</span> <span class="o">=</span> <span class="n">APIWorkerInterface</span><span class="p">(</span><span class="s1">&#39;http://api.aime.team&#39;</span><span class="p">,</span> <span class="s1">&#39;llama2_chat&#39;</span><span class="p">,</span> <span class="o">&lt;</span><span class="n">auth_key</span><span class="o">&gt;</span><span class="p">)</span>
 <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
@@ -134,7 +135,7 @@ False while progress data is being transmitted or if an error occured.</p>
 </pre></div>
 </div>
 <p>Example usage with progress:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">aime_api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
 
 <span class="n">api_worker</span> <span class="o">=</span> <span class="n">APIWorkerInterface</span><span class="p">(</span><span class="s1">&#39;http://api.aime.team&#39;</span><span class="p">,</span> <span class="s1">&#39;llama2_chat&#39;</span><span class="p">,</span> <span class="o">&lt;</span><span class="n">auth_key</span><span class="o">&gt;</span><span class="p">)</span>
 <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
@@ -150,7 +151,7 @@ False while progress data is being transmitted or if an error occured.</p>
 </pre></div>
 </div>
 <p>Example usage with callback:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">aime_api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
 
 <span class="k">def</span> <span class="nf">progress_callback</span><span class="p">(</span><span class="n">api_worker</span><span class="p">,</span> <span class="n">progress</span><span class="p">,</span> <span class="n">progress_data</span><span class="p">):</span>
     <span class="k">if</span> <span class="n">api_worker</span><span class="o">.</span><span class="n">progress_data_received</span><span class="p">:</span>
@@ -167,7 +168,7 @@ False while progress data is being transmitted or if an error occured.</p>
 </pre></div>
 </div>
 <p>Example usage with callback class:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">aime_api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
 
 <span class="k">class</span> <span class="nc">Callback</span><span class="p">():</span>
 
@@ -192,8 +193,8 @@ False while progress data is being transmitted or if an error occured.</p>
 </pre></div>
 </div>
 <dl class="py method">
-<dt class="sig sig-object py" id="api_worker_interface.APIWorkerInterface.job_request">
-<span class="sig-name descname"><span class="pre">job_request</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#api_worker_interface.APIWorkerInterface.job_request" title="Permalink to this definition"></a></dt>
+<dt class="sig sig-object py" id="aime_api_worker_interface.APIWorkerInterface.job_request">
+<span class="sig-name descname"><span class="pre">job_request</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#aime_api_worker_interface.APIWorkerInterface.job_request" title="Permalink to this definition"></a></dt>
 <dd><p>Worker requests a job from API Server on route /worker_job_request. If there is
 no client job offer within the job_timeout = request_timeout * 0.9 the API server responds with ‘cmd’:’no_job’ and the
 worker requests a job again on route /worker_job_request.
@@ -233,8 +234,8 @@ In MultGPU-Mode (world_size &gt; 1) only rank 0 will get job_data.</p>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="api_worker_interface.APIWorkerInterface.send_job_results">
-<span class="sig-name descname"><span class="pre">send_job_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">results</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#api_worker_interface.APIWorkerInterface.send_job_results" title="Permalink to this definition"></a></dt>
+<dt class="sig sig-object py" id="aime_api_worker_interface.APIWorkerInterface.send_job_results">
+<span class="sig-name descname"><span class="pre">send_job_results</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">results</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aime_api_worker_interface.APIWorkerInterface.send_job_results" title="Permalink to this definition"></a></dt>
 <dd><p>Process/convert job results and send it to API Server on route /worker_job_result.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -262,8 +263,8 @@ Defaults to None.</p></li>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="api_worker_interface.APIWorkerInterface.send_progress">
-<span class="sig-name descname"><span class="pre">send_progress</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">progress</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_received_callback</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_error_callback</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#api_worker_interface.APIWorkerInterface.send_progress" title="Permalink to this definition"></a></dt>
+<dt class="sig sig-object py" id="aime_api_worker_interface.APIWorkerInterface.send_progress">
+<span class="sig-name descname"><span class="pre">send_progress</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">progress</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_received_callback</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">progress_error_callback</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aime_api_worker_interface.APIWorkerInterface.send_progress" title="Permalink to this definition"></a></dt>
 <dd><p>Processes/converts job progress information and data and sends it to API Server on route /worker_job_progress asynchronously
 to main thread using Pool().apply_async() from multiprocessing.dummy. When Api server received progress data,
 self.progress_data_received is set to True. Use progress_received_callback and progress_error_callback for response.</p>
@@ -283,8 +284,8 @@ http response with :status_code == 503: as argument. Called when API server repl
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="api_worker_interface.APIWorkerInterface.async_check_server_connection">
-<span class="sig-name descname"><span class="pre">async_check_server_connection</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">check_server_callback</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">check_server_error_callback</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">terminal_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#api_worker_interface.APIWorkerInterface.async_check_server_connection" title="Permalink to this definition"></a></dt>
+<dt class="sig sig-object py" id="aime_api_worker_interface.APIWorkerInterface.async_check_server_connection">
+<span class="sig-name descname"><span class="pre">async_check_server_connection</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">check_server_callback</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">check_server_error_callback</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">terminal_output</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aime_api_worker_interface.APIWorkerInterface.async_check_server_connection" title="Permalink to this definition"></a></dt>
 <dd><p>Non blocking check of Api server status on route /worker_check_server_status using Pool().apply_async() from multiprocessing.dummy</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -300,8 +301,8 @@ Called when server replied with error. Defaults to None.</p></li>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="api_worker_interface.APIWorkerInterface.check_periodically_if_server_online">
-<span class="sig-name descname"><span class="pre">check_periodically_if_server_online</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">interval_seconds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#api_worker_interface.APIWorkerInterface.check_periodically_if_server_online" title="Permalink to this definition"></a></dt>
+<dt class="sig sig-object py" id="aime_api_worker_interface.APIWorkerInterface.check_periodically_if_server_online">
+<span class="sig-name descname"><span class="pre">check_periodically_if_server_online</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">interval_seconds</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aime_api_worker_interface.APIWorkerInterface.check_periodically_if_server_online" title="Permalink to this definition"></a></dt>
 <dd><p>Checking periodically every interval_seconds=1 if server is online by post requests on route /worker_check_server_status.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
@@ -317,8 +318,8 @@ Called when server replied with error. Defaults to None.</p></li>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="api_worker_interface.APIWorkerInterface.get_pnginfo_metadata">
-<span class="sig-name descname"><span class="pre">get_pnginfo_metadata</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#api_worker_interface.APIWorkerInterface.get_pnginfo_metadata" title="Permalink to this definition"></a></dt>
+<dt class="sig sig-object py" id="aime_api_worker_interface.APIWorkerInterface.get_pnginfo_metadata">
+<span class="sig-name descname"><span class="pre">get_pnginfo_metadata</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#aime_api_worker_interface.APIWorkerInterface.get_pnginfo_metadata" title="Permalink to this definition"></a></dt>
 <dd><p>Parses and returns image metadata from job_data.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
@@ -331,12 +332,12 @@ Called when server replied with error. Defaults to None.</p></li>
 </dd></dl>
 
 <dl class="py method">
-<dt class="sig sig-object py" id="api_worker_interface.APIWorkerInterface.get_version">
-<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_version</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#api_worker_interface.APIWorkerInterface.get_version" title="Permalink to this definition"></a></dt>
-<dd><p>Parses name and version of API Worker Interface with pkg_resources</p>
+<dt class="sig sig-object py" id="aime_api_worker_interface.APIWorkerInterface.get_version">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">get_version</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#aime_api_worker_interface.APIWorkerInterface.get_version" title="Permalink to this definition"></a></dt>
+<dd><p>Parses name and version of AIME API Worker Interface with pkg_resources</p>
 <dl class="field-list simple">
 <dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Name and version of API Worker Interface</p>
+<dd class="field-odd"><p>Name and version of AIME API Worker Interface</p>
 </dd>
 <dt class="field-even">Return type<span class="colon">:</span></dt>
 <dd class="field-even"><p>str</p>
@@ -352,7 +353,7 @@ Called when server replied with error. Defaults to None.</p></li>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="setup.html" class="btn btn-neutral float-left" title="Setup API Worker Interface" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="setup.html" class="btn btn-neutral float-left" title="Setup AIME API Worker Interface" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="examples.html" class="btn btn-neutral float-right" title="Examples API Worker Interface" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

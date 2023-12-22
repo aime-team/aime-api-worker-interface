@@ -4,7 +4,7 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.18.1: http://docutils.sourceforge.net/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>API Worker Interface &mdash; API Worker Interface 0.3.3 documentation</title>
+  <title>API Worker Interface &mdash; AIME API Worker Interface 0.3.3 documentation</title>
       <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
       <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
   <!--[if lt IE 9]>
@@ -19,7 +19,7 @@
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Setup API Worker Interface" href="setup.html" /> 
+    <link rel="next" title="Setup AIME API Worker Interface" href="setup.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -31,7 +31,7 @@
           
           
           <a href="#" class="icon icon-home">
-            API Worker Interface
+            AIME API Worker Interface
           </a>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
@@ -53,7 +53,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="#">API Worker Interface</a>
+          <a href="#">AIME API Worker Interface</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -81,6 +81,76 @@
 </div>
 </div></blockquote>
 <p><strong>Examples</strong></p>
+<blockquote>
+<div><p>Example usage simple:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">aime_api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
+
+<span class="n">api_worker</span> <span class="o">=</span> <span class="n">APIWorkerInterface</span><span class="p">(</span><span class="s1">&#39;http://api.aime.team&#39;</span><span class="p">,</span> <span class="s1">&#39;llama2_chat&#39;</span><span class="p">,</span> <span class="o">&lt;</span><span class="n">auth_key</span><span class="o">&gt;</span><span class="p">)</span>
+<span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+    <span class="n">job_data</span> <span class="o">=</span> <span class="n">api_worker</span><span class="o">.</span><span class="n">job_request</span><span class="p">()</span>
+    <span class="n">output</span> <span class="o">=</span> <span class="n">do_deep_learning_worker_calculations</span><span class="p">(</span><span class="n">job_data</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+    <span class="n">api_worker</span><span class="o">.</span><span class="n">send_job_results</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Example usage with progress:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">aime_api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
+
+<span class="n">api_worker</span> <span class="o">=</span> <span class="n">APIWorkerInterface</span><span class="p">(</span><span class="s1">&#39;http://api.aime.team&#39;</span><span class="p">,</span> <span class="s1">&#39;llama2_chat&#39;</span><span class="p">,</span> <span class="o">&lt;</span><span class="n">auth_key</span><span class="o">&gt;</span><span class="p">)</span>
+<span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+    <span class="n">job_data</span> <span class="o">=</span> <span class="n">api_worker</span><span class="o">.</span><span class="n">job_request</span><span class="p">()</span>
+
+    <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="n">deep_learning_worker_calculation</span><span class="p">:</span>
+        <span class="n">progress_in_percent</span> <span class="o">=</span> <span class="nb">round</span><span class="p">(</span><span class="n">step</span><span class="o">*</span><span class="mi">100</span><span class="o">/</span><span class="nb">len</span><span class="p">(</span><span class="n">deep_learning_worker_calculation</span><span class="p">))</span>
+        <span class="n">progress_data</span> <span class="o">=</span> <span class="n">do_deep_learning_worker_calculation_step</span><span class="p">(</span><span class="n">job_data</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">api_worker</span><span class="o">.</span><span class="n">progress_data_received</span><span class="p">:</span>
+            <span class="n">api_worker</span><span class="o">.</span><span class="n">send_progress</span><span class="p">(</span><span class="n">progress_in_percent</span><span class="p">,</span> <span class="n">progress_data</span><span class="p">)</span>
+    <span class="n">output</span> <span class="o">=</span> <span class="n">get_result</span><span class="p">()</span>
+    <span class="n">api_worker</span><span class="o">.</span><span class="n">send_job_results</span><span class="p">(</span><span class="n">output</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Example usage with callback:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">aime_api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
+
+<span class="k">def</span> <span class="nf">progress_callback</span><span class="p">(</span><span class="n">api_worker</span><span class="p">,</span> <span class="n">progress</span><span class="p">,</span> <span class="n">progress_data</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">api_worker</span><span class="o">.</span><span class="n">progress_data_received</span><span class="p">:</span>
+        <span class="n">api_worker</span><span class="o">.</span><span class="n">send_progress</span><span class="p">(</span><span class="n">progress</span><span class="p">,</span> <span class="n">progress_data</span><span class="p">)</span>
+
+
+<span class="n">api_worker</span> <span class="o">=</span> <span class="n">APIWorkerInterface</span><span class="p">(</span><span class="s1">&#39;http://api.aime.team&#39;</span><span class="p">,</span> <span class="s1">&#39;llama2_chat&#39;</span><span class="p">,</span> <span class="o">&lt;</span><span class="n">auth_key</span><span class="o">&gt;</span><span class="p">)</span>
+<span class="n">callback</span> <span class="o">=</span> <span class="n">Callback</span><span class="p">(</span><span class="n">api_worker</span><span class="p">)</span>
+
+<span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+    <span class="n">job_data</span> <span class="o">=</span> <span class="n">api_worker</span><span class="o">.</span><span class="n">job_request</span><span class="p">()</span>
+    <span class="n">output</span> <span class="o">=</span> <span class="n">do_deep_learning_worker_calculation</span><span class="p">(</span><span class="n">job_data</span><span class="p">,</span> <span class="n">progress_callback</span><span class="p">,</span> <span class="n">api_worker</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+    <span class="n">api_worker</span><span class="o">.</span><span class="n">send_progress</span><span class="p">(</span><span class="n">progress</span><span class="p">,</span> <span class="n">progress_data</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Example usage with callback class:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">aime_api_worker_interface</span> <span class="kn">import</span> <span class="n">APIWorkerInterface</span>
+
+<span class="k">class</span> <span class="nc">Callback</span><span class="p">():</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">api_worker</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">api_worker</span> <span class="o">=</span> <span class="n">api_worker</span>
+
+
+    <span class="k">def</span> <span class="nf">progress_callback</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">progress</span><span class="p">,</span> <span class="n">progress_data</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">api_worker</span><span class="o">.</span><span class="n">progress_data_received</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">api_worker</span><span class="o">.</span><span class="n">send_progress</span><span class="p">(</span><span class="n">progress</span><span class="p">,</span> <span class="n">progress_data</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">result_callback</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">result</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">api_worker</span><span class="o">.</span><span class="n">send_job_results</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+
+
+<span class="n">api_worker</span> <span class="o">=</span> <span class="n">APIWorkerInterface</span><span class="p">(</span><span class="s1">&#39;http://api.aime.team&#39;</span><span class="p">,</span> <span class="s1">&#39;llama2_chat&#39;</span><span class="p">,</span> <span class="o">&lt;</span><span class="n">auth_key</span><span class="o">&gt;</span><span class="p">)</span>
+<span class="n">callback</span> <span class="o">=</span> <span class="n">Callback</span><span class="p">(</span><span class="n">api_worker</span><span class="p">)</span>
+
+<span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+    <span class="n">job_data</span> <span class="o">=</span> <span class="n">api_worker</span><span class="o">.</span><span class="n">job_request</span><span class="p">()</span>
+    <span class="n">do_deep_learning_worker_calculation</span><span class="p">(</span><span class="n">job_data</span><span class="p">,</span> <span class="n">callback</span><span class="o">.</span><span class="n">result_callback</span><span class="p">,</span> <span class="n">callback</span><span class="o">.</span><span class="n">progress_callback</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+</pre></div>
+</div>
+</div></blockquote>
 <div class="toctree-wrapper compound">
 </div>
 <div class="admonition note">
@@ -93,7 +163,7 @@
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="setup.html" class="btn btn-neutral float-right" title="Setup API Worker Interface" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="setup.html" class="btn btn-neutral float-right" title="Setup AIME API Worker Interface" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
