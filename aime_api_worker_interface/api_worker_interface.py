@@ -270,7 +270,6 @@ class APIWorkerInterface():
             # hold all GPU processes here until we have a new job                     
             APIWorkerInterface.barrier.wait()
         self.__current_job_data = job_data
-
         return job_data
 
 
@@ -490,16 +489,23 @@ class APIWorkerInterface():
 
             if output_type == 'image':
                 output_data[output_name] = self.__convert_image_to_base64_string(
-                    output_data[output_name], 
-                    image_format, 
+                    output_data[output_name],
+                    image_format,
                     color_space
                 )
             elif output_type == 'image_list':
                 output_data[output_name] = self.__convert_image_list_to_base64_string(
-                    output_data[output_name], 
+                    output_data[output_name],
                     image_format,
                     color_space
                 )
+            elif output_type == 'audio':
+                audio_format = output_description.get('audio_format', 'wav')
+                output_data[output_name] = self.__convert_audio_to_base64_string(
+                    output_data[output_name],
+                    audio_format
+                )
+            print(output_name, type(output_data[output_name]), output_data[output_name])
 
 
     def __prepare_output(self, output_data, finished):
@@ -559,6 +565,10 @@ class APIWorkerInterface():
             
             image_64 = f'data:image/{image_format};base64,' + base64.b64encode(buffer.getvalue()).decode('utf-8')
         return image_64
+
+    
+    def __convert_audio_to_base64_string(self, audio_object, audio_format='wav'):
+        return f'data:audio/{audio_format};base64,' + base64.b64encode(audio_object.getvalue()).decode('utf-8')
 
 
     def __convert_image_list_to_base64_string(self, list_images, image_format, color_space):
