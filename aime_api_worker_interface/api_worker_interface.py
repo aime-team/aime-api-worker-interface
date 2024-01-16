@@ -505,7 +505,6 @@ class APIWorkerInterface():
                     output_data[output_name],
                     audio_format
                 )
-            print(output_name, type(output_data[output_name]), output_data[output_name])
 
 
     def __prepare_output(self, output_data, finished):
