@@ -1,4 +1,6 @@
-Interface to connect deep learning models with AIME ML API 
+# AIME API Worker Interface
+
+Interface to connect deep learning models with AIME API Server 
 
 
 # Setup with pip
