@@ -1,0 +1,9 @@
+You can easily turn your existing Pytorch and Tensorflow script into an API computer worker by integrating the AIME API Worker Interface.
+
+It is currently available as Python Pip package, extendable to other programming language. It mainly consist of three calls:
+
+    • Wait for a job and get the input parameters for the compute job
+    • In case of lengthy jobs: send job status or intermediate results
+    • Send the final job result
+
+This can be integrated after the model is loaded in a loop to process jobs without having to load the model for each request, giving much faster response times than starting a script for each compute request.

@@ -55,7 +55,8 @@ class APIWorkerInterface():
             False while progress data is being transmitted or if an error occured.
 
     Examples:
-        Example usage simple:
+        Minimal example, instantiate the api_worker with URL to the API server, 
+        job type and auth_key. Waiting for and receiving job data and sending job result:
 
         .. highlight:: python
         .. code-block:: python            

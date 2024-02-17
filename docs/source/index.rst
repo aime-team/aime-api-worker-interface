@@ -2,6 +2,7 @@
 API Worker Interface
 ====================
 
+   .. include:: about.txt
 
 **Setup:**
 
@@ -18,9 +19,8 @@ API Worker Interface
    :hidden:
    
    Setup <setup>
-   Documentation <api_worker_interface>
    Examples <examples>
-
+   Documentation <api_worker_interface>
 
 
 .. note::

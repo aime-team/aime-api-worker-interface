@@ -1,7 +1,8 @@
  
-Run
+The AIME API worker interface Python Pip package can be installed with following commands:
 
 .. highlight:: shell
 .. code-block:: shell
 
+    pip install wheel
     pip install git+https://github.com//aime-team/aime-api-worker-interface
