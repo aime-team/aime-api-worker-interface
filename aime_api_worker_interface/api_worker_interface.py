@@ -181,19 +181,22 @@ class APIWorkerInterface():
         self.worker_name = self.__make_worker_name()
         self.__init_manager_and_barrier()
         self.progress_data_received = True
-        self.__current_job_data = dict()
+        self.__current_job_cmd = dict()
         self.print_server_status = print_server_status
         self.async_check_server_connection(terminal_output = print_server_status)
         self.request_timeout = request_timeout
         self.worker_version = worker_version
         self.version = self.get_version()
 
+    def current_job_data(self):
+        return self.__current_job_cmd.get('job_data', {})
 
-    def job_request(self):
+
+    def job_request(self, max_job_batch=1):
         """Worker requests a job from API Server on route /worker_job_request. If there is 
         no client job offer within the job_timeout = request_timeout * 0.9 the API server responds with 'cmd':'no_job' and the 
         worker requests a job again on route /worker_job_request. 
-        In MultGPU-Mode (world_size > 1) only rank 0 will get job_data.
+        In MultGPU-Mode (world_size > 1) only rank 0 will get the job_data.
 
         Returns:
             dict: Job data with worker [INPUT] parameters received from API server.
@@ -205,14 +208,17 @@ class APIWorkerInterface():
             .. highlight:: python
             .. code-block:: python
 
-                job_data = {
-                    'prompt': 'prompt',
+                response_data = {
                     'wait_for_result': False,
-                    'job_id': 'JID1',
                     'endpoint_name': 'stable_diffusion_xl_txt2img',
                     'start_time': 1700430052.505548,
                     'start_time_compute': 1700430052.5124364},
                     'cmd': 'job',
+                    'job_data': [{
+                        'job_id': 'JID1',
+                        'prompt': 'prompt',
+                        ... 
+                    }],
                     'progress_descriptions': {
                         'progress_images': {
                             'type': 'image_list', 'image_format': 'JPEG', 'color_space': 'RGB'
@@ -226,7 +232,7 @@ class APIWorkerInterface():
                     }
                 }
         """
-        job_data = dict()
+        job_cmd = dict()
         if self.rank == 0:
             have_job = False
             counter = 0
@@ -237,7 +243,8 @@ class APIWorkerInterface():
                     'auth_key': self.auth_key,
                     'version': self.version,
                     'worker_version': self.worker_version,
-                    'request_timeout': self.request_timeout
+                    'request_timeout': self.request_timeout,
+                    'max_job_batch': max_job_batch,
                 }
                 try:
                     response = self.__fetch('/worker_job_request', request)
@@ -249,9 +256,9 @@ class APIWorkerInterface():
                     continue
                 response_output_str = '! API server responded with {cmd}: {msg}'
                 if response.status_code == 200:
-                    job_data = response.json() 
-                    cmd = job_data.get('cmd')
-                    msg = job_data.get('msg', 'unknown')
+                    job_cmd = response.json() 
+                    cmd = job_cmd.get('cmd')
+                    msg = job_cmd.get('msg', 'unknown')
                     if cmd == 'job':
                         have_job = True
                     elif cmd == 'no_job':
@@ -270,18 +277,17 @@ class APIWorkerInterface():
         if self.world_size > 1:
             # hold all GPU processes here until we have a new job                     
             APIWorkerInterface.barrier.wait()
-        self.__current_job_data = job_data
-        return job_data
+
+        self.__current_job_cmd = job_cmd
+        return self.current_job_data()
 
 
-    def send_job_results(self, results, job_data=None):
+    def send_job_results(self, results):
         """Process/convert job results and send it to API Server on route /worker_job_result.
 
         Args:
             results (dict): worker [OUTPUT] result parameters (f.i. 'image', 'images' or 'text').
                 Example results: ``{'images': [<PIL.Image.Image>, <PIL.Image.Image>, ...]}``
-            job_data (dict, optional): job_data received from job_request(), if an explicit change of job parameters is desired. 
-                Defaults to None.
 
         Returns:
             requests.models.Response: Http response from API server to the worker.
@@ -295,8 +301,6 @@ class APIWorkerInterface():
                 An error occured in API server:                     {'cmd': 'error', 'msg': <error message>} 
                 API Server received data received with a warning:   {'cmd': 'warning', 'msg': <warning message>}
         """
-        if job_data:
-            self.__current_job_data.update(job_data)
         if self.rank == 0:        
             results = self.__prepare_output(results, True)
             while True:
@@ -316,7 +320,6 @@ class APIWorkerInterface():
         self,
         progress,
         progress_data=None,
-        job_data=None,
         progress_received_callback=None,
         progress_error_callback=None
         ):
@@ -335,11 +338,9 @@ class APIWorkerInterface():
             
         """
         
-        if job_data: 
-            self.__current_job_data.update(job_data) 
-        if self.rank == 0 and not self.__current_job_data.pop('wait_for_result', False):
-            
-            payload = {parameter: self.__current_job_data[parameter] for parameter in SERVER_PARAMETERS}
+        if self.rank == 0 and not self.__current_job_cmd.pop('wait_for_result', False):
+            job_data = self.current_job_data()
+            payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
             payload.update(
                 {
                     'progress': progress, 
@@ -412,11 +413,12 @@ class APIWorkerInterface():
             PIL.PngImagePlugin.PngInfo: PngInfo Object with metadata for PNG images
         """        
         metadata = PngInfo()
+        job_data = self.current_job_data()
         for parameter_name in self.image_metadata_params:
-            parameter = self.__current_job_data.get(parameter_name)
+            parameter = job_data.get(parameter_name)
             if parameter:
                 metadata.add_text(parameter_name, str(parameter))
-        aime_str = f'AIME API {self.__current_job_data.get("endpoint_name", self.job_type)}'
+        aime_str = f'AIME API {self.__current_job_cmd.get("endpoint_name", self.job_type)}'
         metadata.add_text('Artist', aime_str)
         metadata.add_text('ProcessingSoftware', aime_str)
         metadata.add_text('Software', aime_str)
@@ -426,10 +428,11 @@ class APIWorkerInterface():
 
 
     def get_exif_metadata(self, image):
-        metadata = {str(parameter_name): self.__current_job_data.get(parameter_name) for parameter_name in DEFAULT_IMAGE_METADATA}
+        job_data = self.current_job_data()
+        metadata = {str(parameter_name): job_data.get(parameter_name) for parameter_name in DEFAULT_IMAGE_METADATA}
         exif = image.getexif()
         exif[0x9286] = json.dumps(metadata) # Comment Tag
-        aime_str = f'AIME API {self.__current_job_data.get("endpoint_name", self.job_type)}'
+        aime_str = f'AIME API {self.__current_job_cmd.get("endpoint_name", self.job_type)}'
         exif[0x013b] = aime_str # Artist
         exif[0x000b] = aime_str # ProcessingSoftware
         exif[0x0131] = aime_str # Software
@@ -525,24 +528,25 @@ class APIWorkerInterface():
             output_data['version'] = self.version
             output_data['auth'] = self.worker_name
             if finished:
+                job_data = self.current_job_data()
                 for parameter in SERVER_PARAMETERS:
-                    output_data[parameter] = self.__current_job_data.get(parameter)
+                    output_data[parameter] = job_data.get(parameter)
                 output_data['job_type'] = self.job_type
                 mode = 'output'
-
             else:
                 mode = 'progress'
-            descriptions = self.__current_job_data.get(f'{mode}_descriptions')
+            descriptions = self.__current_job_cmd.get(f'{mode}_descriptions')
             for output_name, output_description in descriptions.items():
                 self.__convert_output_types_to_string_representation(output_data, output_name, output_description)
                 if finished:
-                    if output_name in self.__current_job_data and output_name not in output_data:
-                        output_data[output_name] = self.__current_job_data[output_name]
+                    job_data = self.current_job_data()
+                    if output_name in job_data and output_name not in output_data:
+                        output_data[output_name] = job_data[output_name]
         return output_data
 
 
     def __convert_image_to_base64_string(self, image, image_format, color_space):
-        """Converts given PIL image to base64 string with given image_format and image metadata parsed from __current_job_data.
+        """Converts given PIL image to base64 string with given image_format and image metadata parsed from current_job_data().
 
         Args:
             image (PIL.PngImagePlugin.PngImageFile): Python pillow image to be converted
@@ -572,7 +576,7 @@ class APIWorkerInterface():
 
 
     def __convert_image_list_to_base64_string(self, list_images, image_format, color_space):
-        """Converts given list of PIL images to base64 string with given image_format and image metadata parsed from __current_job_data.
+        """Converts given list of PIL images to base64 string with given image_format and adds image metadata from input data.
 
         Args:
             list_images (list [PIL.PngImagePlugin.PngImageFile, ..]): List of python pillow images to be converted
