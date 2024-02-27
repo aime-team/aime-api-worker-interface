@@ -188,11 +188,29 @@ class APIWorkerInterface():
         self.worker_version = worker_version
         self.version = self.get_version()
 
-    def current_job_data(self):
-        return self.__current_job_cmd.get('job_data', {})
+    def current_job_data(self, job_id=None):
+        job_batch_data = self.__current_job_cmd.get('job_data', [])
+        if(job_id == None):
+            if(len(job_batch_data) == 1):
+                return job_batch_data[0]
+            else:
+                raise Exception("More then one job in batch: job_id argument required!")                
+        else:
+            for job_data in job_batch_data:
+                if(job_data['job_id'] == job_id):
+                    return job_data
+        raise Exception("No current job with job_id: %s" % job_id)
 
 
-    def job_request(self, max_job_batch=1):
+    def current_job_batch_data(self):
+        return self.__current_job_cmd.get('job_data', [])
+
+
+    def job_request(self):
+        self.job_batch_request(1)
+        return self.current_job_data()
+
+    def job_batch_request(self, max_job_batch):
         """Worker requests a job from API Server on route /worker_job_request. If there is 
         no client job offer within the job_timeout = request_timeout * 0.9 the API server responds with 'cmd':'no_job' and the 
         worker requests a job again on route /worker_job_request. 
@@ -278,11 +296,17 @@ class APIWorkerInterface():
             # hold all GPU processes here until we have a new job                     
             APIWorkerInterface.barrier.wait()
 
+        # TODO: remove legacy support api_server version < 0.6.0: convert from {} to [{}]
+        job_data = job_cmd.get('job_data', {})
+        if not isinstance(job_data, list):
+            job_cmd['job_data'] = [job_data]
+
         self.__current_job_cmd = job_cmd
-        return self.current_job_data()
+        return self.current_job_batch_data()
 
 
-    def send_job_results(self, results):
+
+    def send_job_results(self, results, job_data=None):
         """Process/convert job results and send it to API Server on route /worker_job_result.
 
         Args:
@@ -301,8 +325,10 @@ class APIWorkerInterface():
                 An error occured in API server:                     {'cmd': 'error', 'msg': <error message>} 
                 API Server received data received with a warning:   {'cmd': 'warning', 'msg': <warning message>}
         """
-        if self.rank == 0:        
-            results = self.__prepare_output(results, True)
+        if self.rank == 0:
+            if not job_data:
+                job_data = self.current_job_data()
+            results = self.__prepare_output(results, job_data, True)
             while True:
                 try:
                     response =  self.__fetch('/worker_job_result', results)
@@ -321,7 +347,8 @@ class APIWorkerInterface():
         progress,
         progress_data=None,
         progress_received_callback=None,
-        progress_error_callback=None
+        progress_error_callback=None,
+        job_data=None
         ):
         """Processes/converts job progress information and data and sends it to API Server on route /worker_job_progress asynchronously 
         to main thread using Pool().apply_async() from multiprocessing.dummy. When Api server received progress data, 
@@ -339,12 +366,13 @@ class APIWorkerInterface():
         """
         
         if self.rank == 0 and not self.__current_job_cmd.pop('wait_for_result', False):
-            job_data = self.current_job_data()
+            if not job_data:
+                job_data = self.current_job_data()
             payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
             payload.update(
                 {
                     'progress': progress, 
-                    'progress_data': self.__prepare_output(progress_data, False)
+                    'progress_data': self.__prepare_output(progress_data, job_data, False)
                 }
             )
             self.progress_data_received = False
@@ -406,14 +434,13 @@ class APIWorkerInterface():
                     time.sleep(interval_seconds)
 
 
-    def get_pnginfo_metadata(self):
+    def get_pnginfo_metadata(self, job_data):
         """Parses and returns image metadata from job_data.
 
         Returns:
             PIL.PngImagePlugin.PngInfo: PngInfo Object with metadata for PNG images
         """        
         metadata = PngInfo()
-        job_data = self.current_job_data()
         for parameter_name in self.image_metadata_params:
             parameter = job_data.get(parameter_name)
             if parameter:
@@ -427,8 +454,7 @@ class APIWorkerInterface():
         return metadata
 
 
-    def get_exif_metadata(self, image):
-        job_data = self.current_job_data()
+    def get_exif_metadata(self, image, job_data):
         metadata = {str(parameter_name): job_data.get(parameter_name) for parameter_name in DEFAULT_IMAGE_METADATA}
         exif = image.getexif()
         exif[0x9286] = json.dumps(metadata) # Comment Tag
@@ -475,7 +501,8 @@ class APIWorkerInterface():
         self,
         output_data,
         output_name,
-        output_description
+        output_description,
+        job_data
         ):
         """Converts parameters output data from type 'image' and 'image_list' to base64 strings. 
 
@@ -495,13 +522,15 @@ class APIWorkerInterface():
                 output_data[output_name] = self.__convert_image_to_base64_string(
                     output_data[output_name],
                     image_format,
-                    color_space
+                    color_space,
+                    job_data
                 )
             elif output_type == 'image_list':
                 output_data[output_name] = self.__convert_image_list_to_base64_string(
                     output_data[output_name],
                     image_format,
-                    color_space
+                    color_space,
+                    job_data
                 )
             elif output_type == 'audio':
                 audio_format = output_description.get('audio_format', 'wav')
@@ -511,7 +540,7 @@ class APIWorkerInterface():
                 )
 
 
-    def __prepare_output(self, output_data, finished):
+    def __prepare_output(self, output_data, job_data, finished):
         """Adds SERVER_PARAMETERS to output_data. Converts parameters in output data from type 'image' and 'image_list' to base64 strings. 
         Adds [OUTPUT] parameters found in job_data[output_description/progress_description] to output_data
 
@@ -528,7 +557,6 @@ class APIWorkerInterface():
             output_data['version'] = self.version
             output_data['auth'] = self.worker_name
             if finished:
-                job_data = self.current_job_data()
                 for parameter in SERVER_PARAMETERS:
                     output_data[parameter] = job_data.get(parameter)
                 output_data['job_type'] = self.job_type
@@ -537,16 +565,15 @@ class APIWorkerInterface():
                 mode = 'progress'
             descriptions = self.__current_job_cmd.get(f'{mode}_descriptions')
             for output_name, output_description in descriptions.items():
-                self.__convert_output_types_to_string_representation(output_data, output_name, output_description)
+                self.__convert_output_types_to_string_representation(output_data, output_name, output_description, job_data)
                 if finished:
-                    job_data = self.current_job_data()
                     if output_name in job_data and output_name not in output_data:
                         output_data[output_name] = job_data[output_name]
         return output_data
 
 
-    def __convert_image_to_base64_string(self, image, image_format, color_space):
-        """Converts given PIL image to base64 string with given image_format and image metadata parsed from current_job_data().
+    def __convert_image_to_base64_string(self, image, image_format, color_space, job_data):
+        """Converts given PIL image to base64 string with given image_format and image metadata parsed from job_data.
 
         Args:
             image (PIL.PngImagePlugin.PngImageFile): Python pillow image to be converted
@@ -558,11 +585,10 @@ class APIWorkerInterface():
         image = image.convert(color_space)
         with io.BytesIO() as buffer:
             if image_format == 'PNG':
-                image.save(buffer, format=image_format, pnginfo=self.get_pnginfo_metadata())
-
+                image.save(buffer, format=image_format, pnginfo=self.get_pnginfo_metadata(job_data))
             elif image_format =='JPEG' or image_format == 'JPG':
                 image_format = 'JPEG'
-                exif = self.get_exif_metadata(image)
+                exif = self.get_exif_metadata(image, job_data)
                 image.save(buffer, format=image_format, exif=exif)
             else:
                 image.save(buffer, format=image_format)
@@ -575,7 +601,7 @@ class APIWorkerInterface():
         return f'data:audio/{audio_format};base64,' + base64.b64encode(audio_object.getvalue()).decode('utf-8')
 
 
-    def __convert_image_list_to_base64_string(self, list_images, image_format, color_space):
+    def __convert_image_list_to_base64_string(self, list_images, image_format, color_space, job_data):
         """Converts given list of PIL images to base64 string with given image_format and adds image metadata from input data.
 
         Args:
@@ -585,7 +611,7 @@ class APIWorkerInterface():
         Returns:
             str: base64 string of images
         """        
-        image_64 = [self.__convert_image_to_base64_string(image, image_format, color_space) for image in list_images]
+        image_64 = [self.__convert_image_to_base64_string(image, image_format, color_space, job_data) for image in list_images]
         return image_64
 
 
