@@ -182,13 +182,25 @@ class APIWorkerInterface():
         self.__init_manager_and_barrier()
         self.progress_data_received = True
         self.__current_job_cmd = dict()
+        self.__current_jobs_finished = []
         self.print_server_status = print_server_status
         self.async_check_server_connection(terminal_output = print_server_status)
         self.request_timeout = request_timeout
         self.worker_version = worker_version
         self.version = self.get_version()
 
+
     def current_job_data(self, job_id=None):
+        """get the job_data of current job to be processed
+
+        Args:
+            job_id (string): For single job processing (max_job_batch=1) the job_id is not required.
+                             For batch job processing (max_job_batch>1) the job_id is required to specify 
+                             the job the data should be returned.
+
+        Returns:
+            job_data: the job_data of the current only job or the job with the given job_id
+        """        
         job_batch_data = self.__current_job_cmd.get('job_data', [])
         if(job_id == None):
             if(len(job_batch_data) == 1):
@@ -203,21 +215,68 @@ class APIWorkerInterface():
 
 
     def current_job_batch_data(self):
+        """get the job_datas of the current batch as list 
+
+        Returns:
+            [job_data]: the list of job_datas of the current jobs to be processed
+        """             
         return self.__current_job_cmd.get('job_data', [])
 
 
+    def has_job_finished(self, job_data):
+        """check if specific job has been addressed with a send_job_results and is thereby finished
+
+        Args:
+            job_data: job_data of the job to check
+
+        Returns:
+            bool: True if job has send job_results, False otherwise
+        """   
+        for idx, job in enumerate(self.current_job_batch_data()):
+            if(job['job_id'] == job_data['job_id']):
+                return self.__current_jobs_finished[idx]
+        raise Exception("job not found in batch: job_data seems invalid!")                
+
+
+    def have_all_jobs_finished(self):
+        """check if all jobs have been addressed with a send_job_results and are therefore finished
+
+        Returns:
+            bool: true if all jobs have send job_results, false otherwise
+        """                  
+        for finished in self.__current_jobs_finished:
+            if not finished:
+                return False
+        return True
+
+
     def job_request(self):
+        """Worker requests a single job from the API Server on endpoint route /worker_job_request. 
+
+        Does call job_batch_request() with max_job_batch size 1 and returns the first job.
+
+        See job_batch_request() for more information.
+
+        Returns:
+           Dict: job data with worker [INPUT] parameters received from API server.
+        """
         self.job_batch_request(1)
         return self.current_job_data()
 
+
     def job_batch_request(self, max_job_batch):
-        """Worker requests a job from API Server on route /worker_job_request. If there is 
-        no client job offer within the job_timeout = request_timeout * 0.9 the API server responds with 'cmd':'no_job' and the 
-        worker requests a job again on route /worker_job_request. 
+        """Worker requests a job batch from API Server on endpoint route /worker_job_request.
+
+        If there is no client job offer within the job_timeout = request_timeout * 0.9 the API server 
+        responds with 'cmd':'no_job' and the worker requests a job again on endpoint route/worker_job_request.
+         
         In MultGPU-Mode (world_size > 1) only rank 0 will get the job_data.
 
+        Args:
+            max_job_batch: max job batch size of jobs to process. One to max job batch size jobs will be returned
+
         Returns:
-            dict: Job data with worker [INPUT] parameters received from API server.
+            Array: Array of job data with worker [INPUT] parameters received from API server.
 
         Examples:
 
@@ -296,10 +355,13 @@ class APIWorkerInterface():
             # hold all GPU processes here until we have a new job                     
             APIWorkerInterface.barrier.wait()
 
-        # TODO: remove legacy support api_server version < 0.6.0: convert from {} to [{}]
+        # TODO: remove legacy support api_server version < 0.6.0: convert job_data from {} to [{}]
         job_data = job_cmd.get('job_data', {})
         if not isinstance(job_data, list):
-            job_cmd['job_data'] = [job_data]
+            job_data = [job_data]
+            job_cmd['job_data'] = job_data
+
+        self.__current_jobs_finished = [False] * len(job_data)
 
         self.__current_job_cmd = job_cmd
         return self.current_job_batch_data()
@@ -328,6 +390,12 @@ class APIWorkerInterface():
         if self.rank == 0:
             if not job_data:
                 job_data = self.current_job_data()
+
+            for idx, job in enumerate(self.current_job_batch_data()):
+                if(job['job_id'] == job_data['job_id']):
+                    self.__current_jobs_finished[idx] = True
+                    break
+
             results = self.__prepare_output(results, job_data, True)
             while True:
                 try:
