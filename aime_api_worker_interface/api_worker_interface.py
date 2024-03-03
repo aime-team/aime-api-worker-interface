@@ -433,7 +433,7 @@ class APIWorkerInterface():
             
         """
         
-        if self.rank == 0 and not self.__current_job_cmd.pop('wait_for_result', False):
+        if self.rank == 0 and self.progress_data_received and not self.__current_job_cmd.pop('wait_for_result', False):            
             if not job_data:
                 job_data = self.current_job_data()
             payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
