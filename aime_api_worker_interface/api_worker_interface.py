@@ -223,6 +223,17 @@ class APIWorkerInterface():
         return self.__current_job_cmd.get('job_data', [])
 
 
+    def get_job_batch_parameter(self, param_name):
+        """get the job_data parameter values for a specific parameter as value array
+
+        Returns:
+            [values]: the value list of the paramter across the batch
+        """             
+        values = []
+        for job_data in self.current_job_batch_data()
+            values.append(job_data[param_name])
+        return values
+
     def has_job_finished(self, job_data):
         """check if specific job has been addressed with a send_job_results and is thereby finished
 
