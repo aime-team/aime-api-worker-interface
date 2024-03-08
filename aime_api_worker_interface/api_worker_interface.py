@@ -230,8 +230,8 @@ class APIWorkerInterface():
             [values]: the value list of the paramter across the batch
         """             
         values = []
-        for job_data in self.current_job_batch_data()
-            values.append(job_data[param_name])
+        for job_data in self.current_job_batch_data():
+            values.append(job_data.get(param_name, None))
         return values
 
     def has_job_finished(self, job_data):
