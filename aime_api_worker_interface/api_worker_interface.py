@@ -444,7 +444,7 @@ class APIWorkerInterface():
             
         """
         
-        if self.rank == 0 and self.progress_data_received and not self.__current_job_cmd.pop('wait_for_result', False):            
+        if self.rank == 0 and self.progress_data_received and not self.__current_job_cmd.get('wait_for_result', False):
             if not job_data:
                 job_data = self.current_job_data()
             payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
@@ -456,6 +456,45 @@ class APIWorkerInterface():
             )
             self.progress_data_received = False
             _ = self.__fetch_async('/worker_job_progress', payload, progress_received_callback, progress_error_callback)
+
+
+    def send_batch_progress(
+        self,
+        batch_progress,
+        progress_batch_data,
+        job_batch_data,
+        progress_received_callback=None,
+        progress_error_callback=None,
+        ):
+        """Processes/converts job progress information and data and sends it to API Server on route /worker_job_progress asynchronously 
+        to main thread using Pool().apply_async() from multiprocessing.dummy. When Api server received progress data, 
+        self.progress_data_received is set to True. Use progress_received_callback and progress_error_callback for response.
+
+        Args:
+            batch_progress [(int)]: current progress (f.i. percent or number of generated tokens)
+            progress_batch_data [(dict, optional)]: dictionary with progress_images or text while worker is computing. 
+                Example progress data: :{'progress_images': [<PIL.Image.Image>, <PIL.Image.Image>, ...]}:. Defaults to None.
+            job_batch_data: 
+            progress_received_callback (callable, optional): Callback function with API server response as argument. 
+                Called when progress_data is received. Defaults to None.
+            progress_error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError or 
+                http response with :status_code == 503: as argument. Called when API server replied with error. Defaults to None.
+            
+        """
+        
+        if self.rank == 0 and self.progress_data_received and not self.__current_job_cmd.get('wait_for_result', False):
+            batch_payload = []
+            for progress, progress_data, job_data in zip(batch_progress, progress_batch_data, job_batch_data):
+                payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
+                payload.update(
+                    {
+                        'progress': progress, 
+                        'progress_data': self.__prepare_output(progress_data, job_data, False)
+                    }
+                )
+                batch_payload.append(payload)
+            self.progress_data_received = False
+            _ = self.__fetch_async('/worker_job_progress', batch_payload, progress_received_callback, progress_error_callback)
 
 
     def async_check_server_connection(
