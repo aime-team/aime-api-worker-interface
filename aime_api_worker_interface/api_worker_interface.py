@@ -678,10 +678,10 @@ class APIWorkerInterface():
                 for parameter in SERVER_PARAMETERS:
                     output_data[parameter] = job_data.get(parameter)
                 output_data['job_type'] = self.job_type
-                mode = 'output'
+                mode = 'final'
             else:
                 mode = 'progress'
-            descriptions = self.__current_job_cmd.get(f'{mode}_descriptions')
+            descriptions = self.__current_job_cmd.get(f'{mode}_output_descriptions')
             for output_name, output_description in descriptions.items():
                 self.__convert_output_types_to_string_representation(output_data, output_name, output_description, job_data)
                 if finished:
