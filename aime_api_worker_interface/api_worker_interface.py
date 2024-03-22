@@ -190,35 +190,35 @@ class APIWorkerInterface():
         self.version = self.get_version()
 
 
-    def current_job_data(self, job_id=None):
+    def get_current_job_data(self, job_id=None):
         """get the job_data of current job to be processed
 
         Args:
-            job_id (string): For single job processing (max_job_batch=1) the job_id is not required.
+            job_id (string, optional): For single job processing (max_job_batch=1) the job_id is not required.
                              For batch job processing (max_job_batch>1) the job_id is required to specify 
-                             the job the data should be returned.
+                             the job the data should be returned. Defaults to None.
 
         Returns:
-            job_data: the job_data of the current only job or the job with the given job_id
+            dict: the job_data of the current only job or the job with the given job_id
         """        
         job_batch_data = self.__current_job_cmd.get('job_data', [])
-        if(job_id == None):
-            if(len(job_batch_data) == 1):
+        if job_id == None:
+            if len(job_batch_data) == 1:
                 return job_batch_data[0]
             else:
                 raise Exception("More then one job in batch: job_id argument required!")                
         else:
             for job_data in job_batch_data:
-                if(job_data['job_id'] == job_id):
+                if job_data.get('job_id') == job_id:
                     return job_data
         raise Exception("No current job with job_id: %s" % job_id)
 
 
-    def current_job_batch_data(self):
+    def get_current_job_batch_data(self):
         """get the job_datas of the current batch as list 
 
         Returns:
-            [job_data]: the list of job_datas of the current jobs to be processed
+            list: the list of job_datas of the current jobs to be processed
         """             
         return self.__current_job_cmd.get('job_data', [])
 
@@ -227,12 +227,10 @@ class APIWorkerInterface():
         """get the job_data parameter values for a specific parameter as value array
 
         Returns:
-            [values]: the value list of the paramter across the batch
-        """             
-        values = []
-        for job_data in self.current_job_batch_data():
-            values.append(job_data.get(param_name, None))
-        return values
+            list: The value list of the parameter across the batch
+        """       
+        return [job_data.get(param_name) for job_data in self.get_current_job_batch_data()]      
+
 
     def has_job_finished(self, job_data):
         """check if specific job has been addressed with a send_job_results and is thereby finished
@@ -243,8 +241,8 @@ class APIWorkerInterface():
         Returns:
             bool: True if job has send job_results, False otherwise
         """   
-        for idx, job in enumerate(self.current_job_batch_data()):
-            if(job['job_id'] == job_data['job_id']):
+        for idx, job in enumerate(self.get_current_job_batch_data()):
+            if job['job_id'] == job_data['job_id']:
                 return self.__current_jobs_finished[idx]
         raise Exception("job not found in batch: job_data seems invalid!")                
 
@@ -269,10 +267,10 @@ class APIWorkerInterface():
         See job_batch_request() for more information.
 
         Returns:
-           Dict: job data with worker [INPUT] parameters received from API server.
+           dict: job data with worker [INPUT] parameters received from API server.
         """
         self.job_batch_request(1)
-        return self.current_job_data()
+        return self.get_current_job_data()
 
 
     def job_batch_request(self, max_job_batch):
@@ -287,7 +285,7 @@ class APIWorkerInterface():
             max_job_batch: max job batch size of jobs to process. One to max job batch size jobs will be returned
 
         Returns:
-            Array: Array of job data with worker [INPUT] parameters received from API server.
+            list: List of job data with worker [INPUT] parameters received from API server.
 
         Examples:
 
@@ -375,7 +373,7 @@ class APIWorkerInterface():
         self.__current_jobs_finished = [False] * len(job_data)
 
         self.__current_job_cmd = job_cmd
-        return self.current_job_batch_data()
+        return self.get_current_job_batch_data()
 
 
 
@@ -400,14 +398,16 @@ class APIWorkerInterface():
         """
         if self.rank == 0:
             if not job_data:
-                job_data = self.current_job_data()
+                job_data = self.get_current_job_data()
 
-            for idx, job in enumerate(self.current_job_batch_data()):
-                if(job['job_id'] == job_data['job_id']):
+            for idx, job in enumerate(self.get_current_job_batch_data()):
+                if job['job_id'] == job_data['job_id']:
                     self.__current_jobs_finished[idx] = True
                     break
 
             results = self.__prepare_output(results, job_data, True)
+            results['auth_key'] = self.auth_key
+            results['job_type'] = self.job_type
             while True:
                 try:
                     response =  self.__fetch('/worker_job_result', results)
@@ -415,6 +415,7 @@ class APIWorkerInterface():
                     print('Connection to server lost')
                     return
                 if response.status_code == 200:
+
                     return response
                 else:
                     self.check_periodically_if_server_online()
@@ -441,15 +442,18 @@ class APIWorkerInterface():
                 Called when progress_data is received. Defaults to None.
             progress_error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError or 
                 http response with :status_code == 503: as argument. Called when API server replied with error. Defaults to None.
+            job_data (dict, optional): To use different job_data than the received one.
             
         """
         
         if self.rank == 0 and self.progress_data_received and not self.__current_job_cmd.get('wait_for_result', False):
             if not job_data:
-                job_data = self.current_job_data()
+                job_data = self.get_current_job_data()
             payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
             payload.update(
                 {
+                    'job_type': self.job_type,
+                    'auth_key': self.auth_key,
                     'progress': progress, 
                     'progress_data': self.__prepare_output(progress_data, job_data, False)
                 }
@@ -462,32 +466,36 @@ class APIWorkerInterface():
         self,
         batch_progress,
         progress_batch_data,
-        job_batch_data,
         progress_received_callback=None,
         progress_error_callback=None,
+        job_batch_data=None
         ):
         """Processes/converts job progress information and data and sends it to API Server on route /worker_job_progress asynchronously 
         to main thread using Pool().apply_async() from multiprocessing.dummy. When Api server received progress data, 
         self.progress_data_received is set to True. Use progress_received_callback and progress_error_callback for response.
 
         Args:
-            batch_progress [(int)]: current progress (f.i. percent or number of generated tokens)
-            progress_batch_data [(dict, optional)]: dictionary with progress_images or text while worker is computing. 
+            batch_progress (list(int, int, ...)): current progress (f.i. percent or number of generated tokens)
+            progress_batch_data (list(dict, dict, ...), optional): dictionary with progress_images or text while worker is computing. 
                 Example progress data: :{'progress_images': [<PIL.Image.Image>, <PIL.Image.Image>, ...]}:. Defaults to None.
-            job_batch_data: 
             progress_received_callback (callable, optional): Callback function with API server response as argument. 
                 Called when progress_data is received. Defaults to None.
             progress_error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError or 
                 http response with :status_code == 503: as argument. Called when API server replied with error. Defaults to None.
+            job_batch_data (list(dict, dict, ...): List of job datas converning jobs ready to send progress
             
         """
         
         if self.rank == 0 and self.progress_data_received and not self.__current_job_cmd.get('wait_for_result', False):
+            if not job_batch_data:
+                job_batch_data = self.get_current_job_batch_data()
             batch_payload = []
             for progress, progress_data, job_data in zip(batch_progress, progress_batch_data, job_batch_data):
                 payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
                 payload.update(
                     {
+                        'job_type': self.job_type,
+                        'auth_key': self.auth_key,
                         'progress': progress, 
                         'progress_data': self.__prepare_output(progress_data, job_data, False)
                     }
