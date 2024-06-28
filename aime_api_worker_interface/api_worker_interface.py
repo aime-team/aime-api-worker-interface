@@ -644,7 +644,7 @@ class APIWorkerInterface():
         """
         if output_name in output_data:
             output_type = output_description.get('type') 
-            image_format = output_description.get('image_format', 'JPEG')
+            image_format = output_description.get('format', 'JPEG')
             color_space = output_description.get('color_space', 'RGB')
 
             if output_type == 'image':
@@ -662,7 +662,7 @@ class APIWorkerInterface():
                     job_data
                 )
             elif output_type == 'audio':
-                audio_format = output_description.get('audio_format', 'wav')
+                audio_format = output_description.get('format', 'wav')
                 output_data[output_name] = self.__convert_audio_to_base64_string(
                     output_data[output_name],
                     audio_format
