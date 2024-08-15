@@ -178,18 +178,21 @@ class APIWorkerInterface():
         self.world_size = world_size
         self.rank = rank
         self.gpu_name = gpu_name
+        self.image_metadata_params = image_metadata_params
+        self.print_server_status = print_server_status
+        self.request_timeout = request_timeout
+        self.worker_version = worker_version
+
         self.__custom_callback = None
         self.__custom_error_callback = None
-        self.image_metadata_params = image_metadata_params
         self.worker_name = self.__make_worker_name()
         self.__init_manager_and_barrier()
         self.progress_data_received = True
         self.__current_job_cmd = dict()
         self.__current_jobs_finished = []
-        self.print_server_status = print_server_status
+
         self.async_check_server_connection(terminal_output = print_server_status)
-        self.request_timeout = request_timeout
-        self.worker_version = worker_version
+
         self.version = self.get_version()
 
 
