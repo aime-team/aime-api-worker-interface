@@ -5,7 +5,7 @@
 import time
 from datetime import datetime, timedelta
 
-from multiprocessing import Barrier
+from multiprocessing import Barrier, Event
 from multiprocessing.managers import SyncManager
 from multiprocessing.dummy import Pool
 
@@ -142,6 +142,7 @@ class APIWorkerInterface():
     """
     manager = None
     barrier = None
+    error_event = Event()
 
     def __init__(
         self, 
@@ -356,30 +357,37 @@ class APIWorkerInterface():
                     elif cmd == 'no_job':
                         continue
                     elif cmd == 'error':
-                        exit(response_output_str.format(cmd=cmd, msg=msg))
-                    elif cmd == 'warning':
                         print(response_output_str.format(cmd=cmd, msg=msg))
+                        self.error_event.set()
+                        break
+                    elif cmd == 'warning':
                         counter += 1
                         self.check_periodically_if_server_online()
                         if counter > 3:
-                            exit(response_output_str.format(cmd=cmd, msg=msg))
+                            print(response_output_str.format(cmd=cmd, msg=msg))
+                            self.error_event.set()
+                            break
                     else:
-                        exit(response_output_str.format(cmd='unknown command', msg=cmd))
+                        print(response_output_str.format(cmd='unknown command', msg=cmd))
+                        self.error_event.set()
+                        break
 
         if self.world_size > 1:
-            # hold all GPU processes here until we have a new job                     
+            # hold all GPU processes here until we have a new job
             APIWorkerInterface.barrier.wait()
+        if self.error_event.is_set():
+            exit()
+        else:
+            # TODO: remove legacy support api_server version < 0.6.0: convert job_data from {} to [{}]
+            job_data = job_cmd.get('job_data', {})
+            if not isinstance(job_data, list):
+                job_data = [job_data]
+                job_cmd['job_data'] = job_data
 
-        # TODO: remove legacy support api_server version < 0.6.0: convert job_data from {} to [{}]
-        job_data = job_cmd.get('job_data', {})
-        if not isinstance(job_data, list):
-            job_data = [job_data]
-            job_cmd['job_data'] = job_data
+            self.__current_jobs_finished = [False] * len(job_data)
 
-        self.__current_jobs_finished = [False] * len(job_data)
-
-        self.__current_job_cmd = job_cmd
-        return self.get_current_job_batch_data()
+            self.__current_job_cmd = job_cmd
+            return self.get_current_job_batch_data()
 
 
 
@@ -603,15 +611,18 @@ class APIWorkerInterface():
         """
         if self.world_size > 1:
             MyManager.register("barrier", lambda: APIWorkerInterface.barrier)
+            MyManager.register("error_event", lambda: APIWorkerInterface.error_event)
             APIWorkerInterface.manager = MyManager(("127.0.0.1", SYNC_MANAGER_BASE_PORT + self.gpu_id), authkey=SYNC_MANAGER_AUTH_KEY)
             # multi GPU synchronization required
             if self.rank == 0:
                 APIWorkerInterface.barrier = Barrier(self.world_size)
                 APIWorkerInterface.manager.start()
+
             else:
                 time.sleep(2)   # manager has to be started first to connect
                 APIWorkerInterface.manager.connect()
-                APIWorkerInterface.barrier = APIWorkerInterface.manager.barrier()    
+                APIWorkerInterface.barrier = APIWorkerInterface.manager.barrier()
+                APIWorkerInterface.error_event = APIWorkerInterface.manager.error_event()
 
 
     def __make_worker_name(self):
