@@ -183,7 +183,8 @@ class APIWorkerInterface():
         self.print_server_status = print_server_status
         self.request_timeout = request_timeout
         self.worker_version = worker_version
-
+        self.progress_input_params = list()
+        self.jobs_canceled = list()
         self.__custom_callback = None
         self.__custom_error_callback = None
         self.worker_name = self.__make_worker_name()
@@ -326,6 +327,8 @@ class APIWorkerInterface():
                 }
         """
         job_cmd = dict()
+        self.jobs_canceled = list()
+        self.progress_input_params = list()
         if self.rank == 0:
             have_job = False
             counter = 0
@@ -474,6 +477,52 @@ class APIWorkerInterface():
             )
             self.progress_data_received = False
             _ = self.__fetch_async('/worker_job_progress', payload, progress_received_callback, progress_error_callback)
+
+
+    def stream_progress(
+        self,
+        progress,
+        progress_data=None,
+        progress_received_callback=None,
+        progress_error_callback=None,
+        job_data=None,
+        wait_for_response=False
+        ):
+        """Processes/converts job progress information and data and sends it to API Server on route /worker_job_progress asynchronously 
+        to main thread u sing Pool().apply_async() from multiprocessing.dummy. When Api server received progress data, 
+        self.progress_data_received is set to True. Use progress_received_callback and progress_error_callback for response.
+
+        Args:
+            progress (int): current progress (f.i. percent or number of generated tokens)
+            progress_data (dict, optional): dictionary with progress_images or text while worker is computing. 
+                Example progress data: :{'progress_images': [<PIL.Image.Image>, <PIL.Image.Image>, ...]}:. Defaults to None.
+            progress_received_callback (callable, optional): Callback function with API server response as argument. 
+                Called when progress_data is received. Defaults to None.
+            progress_error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError or 
+                http response with :status_code == 503: as argument. Called when API server replied with error. Defaults to None.
+            job_data (dict, optional): To use different job_data than the received one.
+            
+        """
+        
+        if self.rank == 0 and self.progress_data_received and not self.__current_job_cmd.get('wait_for_result', False):
+            if not job_data:
+                job_data = self.get_current_job_data()
+            payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
+            payload.update(
+                {
+                    'job_type': self.job_type,
+                    'auth_key': self.auth_key,
+                    'progress': progress, 
+                    'progress_data': self.__prepare_output(progress_data, job_data, False)
+                }
+            )
+            self.progress_data_received = False
+            if wait_for_response:
+                return self.__fetch('/worker_job_progress', results)
+            else:
+                _ = self.__fetch_async('/worker_job_progress', payload, progress_received_callback, progress_error_callback)
+
+   
 
 
     def send_batch_progress(
@@ -889,6 +938,14 @@ class APIWorkerInterface():
                 An error occured in API server:                 {'cmd': 'error', 'msg': <error message>} 
                 API Server received data with a warning:        {'cmd': 'warning', 'msg': <warning message>}
         """
+        
+        batch_response = response.json()
+        if not isinstance(batch_response, list):
+            batch_response = [batch_response]
+        self.jobs_canceled = [res.get('canceled') for res in batch_response]
+        progress_input_params = [res.get('progress_input_params')for res in batch_response]
+        if any(progress_input_params):
+            self.progress_input_params += progress_input_params
         self.progress_data_received = True     
         if self.print_server_status:
             self.__print_server_status(response)
