@@ -605,7 +605,7 @@ class APIWorkerInterface():
         if self.rank == 0:
             server_offline = False
             start_time = datetime.now()
-            dot_string = self.__dot_string_generator()
+            dot_string = self.dot_string_generator()
             while True:
                 try:
                     response = self.__fetch('/worker_check_server_status', {'auth_key': self.auth_key, 'job_type': self.job_type})
@@ -819,7 +819,7 @@ class APIWorkerInterface():
         print(f'Connection to API Server {self.api_server} offline for {duration_being_offline}. Trying to reconnect{next(dot_string)}', end='\r')
 
 
-    def __dot_string_generator(self):
+    def dot_string_generator(self):
         """Generator of string with moving dot for server status print output
 
         Yields:
