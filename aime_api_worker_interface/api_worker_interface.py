@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from multiprocessing import Barrier, Event
 from multiprocessing.managers import SyncManager
-from multiprocessing.dummy import Pool
+from multiprocessing.pool import ThreadPool
 
 import requests 
 import socket
@@ -17,7 +17,6 @@ import base64
 from PIL.PngImagePlugin import PngInfo
 import json
 import pkg_resources
-
 
 
 SYNC_MANAGER_BASE_PORT  =  10042
@@ -30,7 +29,7 @@ DEFAULT_IMAGE_METADATA = [
                         ]
 
 
-class MyManager(SyncManager):    
+class WorkerSyncManager(SyncManager):
     pass
 
 
@@ -143,6 +142,7 @@ class APIWorkerInterface():
     manager = None
     barrier = None
     error_event = Event()
+    manager_ready_event = Event()
 
     def __init__(
         self, 
@@ -183,18 +183,18 @@ class APIWorkerInterface():
         self.print_server_status = print_server_status
         self.request_timeout = request_timeout
         self.worker_version = worker_version
-        self.progress_input_params = list()
-        self.jobs_canceled = list()
+        self.progress_input_params = dict()
+
+        self.pool = ThreadPool()
+        self.awaiting_job_request = False
         self.__custom_callback = None
         self.__custom_error_callback = None
         self.worker_name = self.__make_worker_name()
         self.__init_manager_and_barrier()
         self.progress_data_received = True
-        self.__current_job_cmd = dict()
-        self.__current_jobs_finished = []
-
+        self.new_job_event = Event()
+        self.__current_job_cmds = APIWorkerInterface.manager.dict() # key job_id
         self.async_check_server_connection(terminal_output = print_server_status)
-
         self.version = self.get_version()
 
 
@@ -208,18 +208,23 @@ class APIWorkerInterface():
 
         Returns:
             dict: the job_data of the current only job or the job with the given job_id
-        """        
-        job_batch_data = self.__current_job_cmd.get('job_data', [])
-        if job_id == None:
-            if len(job_batch_data) == 1:
-                return job_batch_data[0]
-            else:
-                raise Exception("More then one job in batch: job_id argument required!")                
+        """
+        return self.__get_current_job_cmd(job_id).get('job_data')
+
+
+    def __get_current_job_cmd(self, job_id=None):
+        if job_id:
+            job_cmd = self.__current_job_cmds.get(job_id)
+            if job_cmd is None:
+                raise ValueError(f'No current job with job_id: {job_id}')
+            return job_cmd
+
+        elif len(self.__current_job_cmds) == 1:
+            return self.__current_job_cmds.values()[0]
+        elif len(self.__current_job_cmds) > 1:
+            raise Exception("More then one running jobs: job_id argument required!")
         else:
-            for job_data in job_batch_data:
-                if job_data.get('job_id') == job_id:
-                    return job_data
-        raise Exception("No current job with job_id: %s" % job_id)
+            return None
 
 
     def get_current_job_batch_data(self):
@@ -227,8 +232,8 @@ class APIWorkerInterface():
 
         Returns:
             list: the list of job_datas of the current jobs to be processed
-        """             
-        return self.__current_job_cmd.get('job_data', [])
+        """
+        return [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if not job_cmd.get('awaiting_yield')]
 
 
     def get_job_batch_parameter(self, param_name):
@@ -240,33 +245,33 @@ class APIWorkerInterface():
         return [job_data.get(param_name) for job_data in self.get_current_job_batch_data()]      
 
 
-    def has_job_finished(self, job_data):
-        """check if specific job has been addressed with a send_job_results and is thereby finished
+    def has_job_finished(self, job_data={}, job_id=None):
+        """Check if specific job has been addressed with a send_job_results and is thereby finished
 
         Args:
             job_data: job_data of the job to check
 
         Returns:
             bool: True if job has send job_results, False otherwise
-        """   
-        for idx, job in enumerate(self.get_current_job_batch_data()):
-            if job['job_id'] == job_data['job_id']:
-                return self.__current_jobs_finished[idx]
-        raise Exception("job not found in batch: job_data seems invalid!")                
+        """
+        return not bool(self.get_current_job_data(job_id or job_data.get('job_id')))
 
 
     def have_all_jobs_finished(self):
         """check if all jobs have been addressed with a send_job_results and are therefore finished
 
         Returns:
-            bool: true if all jobs have send job_results, false otherwise
+            bool: True if all jobs have send job_results, False otherwise
         """                  
-        for finished in self.__current_jobs_finished:
-            if not finished:
-                return False
-        return True
+        return not bool(self.__current_job_cmds)
 
+    def get_canceled_job_ids(self):
+        return [job_id for job_id, job_cmd in self.__current_job_cmds.items() if job_cmd.get('canceled')]
 
+    def is_job_canceled(self, job_id=None):
+        self.__get_current_job_cmd(job_id).get('canceled', False)
+    
+            
     def job_request(self):
         """Worker requests a single job from the API Server on endpoint route /worker_job_request. 
 
@@ -281,7 +286,7 @@ class APIWorkerInterface():
         return self.get_current_job_data()
 
 
-    def job_batch_request(self, max_job_batch):
+    def job_batch_request(self, max_job_batch, wait_for_response=True, callback=None, error_callback=None):
         """Worker requests a job batch from API Server on endpoint route /worker_job_request.
 
         If there is no client job offer within the job_timeout = request_timeout * 0.9 the API server 
@@ -326,75 +331,158 @@ class APIWorkerInterface():
                     }
                 }
         """
-        job_cmd = dict()
-        self.jobs_canceled = list()
-        self.progress_input_params = list()
-        if self.rank == 0:
-            have_job = False
-            counter = 0
-            while not have_job:
-                request = {
-                    'auth': self.worker_name,
-                    'job_type': self.job_type,
-                    'auth_key': self.auth_key,
-                    'version': self.version,
-                    'worker_version': self.worker_version,
-                    'request_timeout': self.request_timeout,
-                    'max_job_batch': max_job_batch,
-                }
-                try:
-                    response = self.__fetch('/worker_job_request', request)
-                    if response.status_code == 503:
+        if wait_for_response:
+            job_cmd = dict()
+            if self.rank == 0:
+                have_job = False
+                counter = 0
+                while not have_job:
+                    request = {
+                        'auth': self.worker_name,
+                        'job_type': self.job_type,
+                        'auth_key': self.auth_key,
+                        'version': self.version,
+                        'worker_version': self.worker_version,
+                        'request_timeout': self.request_timeout,
+                        'max_job_batch': max_job_batch,
+                    }
+                    try:
+                        response = self.__fetch('/worker_job_request', request)
+                        if response.status_code == 503:
+                            self.check_periodically_if_server_online()
+                            continue
+                    except requests.exceptions.ConnectionError:
                         self.check_periodically_if_server_online()
                         continue
-                except requests.exceptions.ConnectionError:
-                    self.check_periodically_if_server_online()
-                    continue
-                response_output_str = '! API server responded with {cmd}: {msg}'
-                if response.status_code == 200:
-                    job_cmd = response.json() 
-                    cmd = job_cmd.get('cmd')
-                    msg = job_cmd.get('msg', 'unknown')
-                    if cmd == 'job':
-                        have_job = True
-                    elif cmd == 'no_job':
-                        continue
-                    elif cmd == 'error':
-                        print(response_output_str.format(cmd=cmd, msg=msg))
-                        self.error_event.set()
-                        break
-                    elif cmd == 'warning':
-                        counter += 1
-                        self.check_periodically_if_server_online()
-                        if counter > 3:
+                    response_output_str = '! API server responded with {cmd}: {msg}'
+                    if response.status_code == 200:
+                        job_cmd = response.json() 
+                        cmd = job_cmd.get('cmd')
+                        msg = job_cmd.get('msg', 'unknown')
+                        if cmd == 'job':
+                            have_job = True
+                        elif cmd == 'no_job':
+                            continue
+                        elif cmd == 'error':
                             print(response_output_str.format(cmd=cmd, msg=msg))
                             self.error_event.set()
                             break
-                    else:
-                        print(response_output_str.format(cmd='unknown command', msg=cmd))
-                        self.error_event.set()
-                        break
+                        elif cmd == 'warning':
+                            counter += 1
+                            self.check_periodically_if_server_online()
+                            if counter > 3:
+                                print(response_output_str.format(cmd=cmd, msg=msg))
+                                self.error_event.set()
+                                break
+                        else:
+                            print(response_output_str.format(cmd='unknown command', msg=cmd))
+                            self.error_event.set()
+                            break
 
-        if self.world_size > 1:
-            # hold all GPU processes here until we have a new job
-            APIWorkerInterface.barrier.wait()
+            if self.world_size > 1:
+                # hold all GPU processes here until we have a new job
+                APIWorkerInterface.barrier.wait()
+            if self.error_event.is_set():
+                exit()
+            else:
+                # TODO: remove legacy support api_server version < 0.6.0: convert job_data from {} to [{}]
+                job_batch_data = job_cmd.get('job_data', {})
+                if not isinstance(job_batch_data, list):
+                    job_batch_data = [job_batch_data]
+                    
+                
+                for job_data in job_batch_data:
+                    if job_data:
+                        job_cmd['job_data'] = job_data
+                        self.__current_job_cmds[job_data.get('job_id')] = job_cmd
+                return job_batch_data
+        else:
+            self.awaiting_job_request = True
+            self.pool.apply_async(
+                self.job_batch_request,
+                args=[max_job_batch], 
+                callback=lambda result: self.__async_job_batch_request_callback_wrapper(callback, result),
+                error_callback=lambda response: self.__async_job_batch_request_error_callback_wrapper(callback, response)
+            )
+            
+
+
+    def job_request_generator(self, max_job_batch):
+        """Generator yielding the related job_batch_data whenever there are new job_requests or an empty list if there are running jobs but no new job requests.
+        Blocking, if there are no running jobs and no new job requests to spare hardware resources.
+
+        Args:
+            max_job_batch (int): Maximum of parallel running jobs
+
+        Yields:
+            list: job_batch_data of new job requests or empty list
+        """        
+        while True:
+            if not self.awaiting_job_request:
+                jobs_to_start = [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('awaiting_yield')]
+                
+                for job_data in jobs_to_start:
+                    job_cmd = self.__current_job_cmds[job_data.get('job_id')]
+                    job_cmd['awaiting_yield'] = False
+                    self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
+                yield jobs_to_start
+                max_job_batch = max_job_batch - len(self.__current_job_cmds)
+                if max_job_batch > 0:
+                    self.job_batch_request(max_job_batch, wait_for_response=False, callback=self.__generator_callback)
+            else:
+                if self.have_all_jobs_finished():
+                    self.wait_for_job()
+                yield []
+
+
+    def wait_for_job(self):
+        """Wait until self.new_job_event.set() is called while periodically printing idle string in a non-blocking background thread.
+        """        
+        self.pool.apply_async(self.print_idle_string)
+        self.new_job_event.clear()
+        self.new_job_event.wait()
+        print(f'\r', end='')
+
+
+    def __async_job_batch_request_callback_wrapper(self, callback, job_batch_data):
+        self.awaiting_job_request = False
+        if callback:
+            callback(job_batch_data)
+        self.new_job_event.set()
+        
+
+    def __async_job_batch_request_error_callback_wrapper(self, callback, response):
+        if callback:
+            callback(response)
+        else:
+            raise requests.exceptions.ConnectionError(response)
         if self.error_event.is_set():
             exit()
-        else:
-            # TODO: remove legacy support api_server version < 0.6.0: convert job_data from {} to [{}]
-            job_data = job_cmd.get('job_data', {})
-            if not isinstance(job_data, list):
-                job_data = [job_data]
-                job_cmd['job_data'] = job_data
 
-            self.__current_jobs_finished = [False] * len(job_data)
-
-            self.__current_job_cmd = job_cmd
-            return self.get_current_job_batch_data()
+    def __generator_callback(self, job_batch_data):
+        
+        for job_data in job_batch_data:
+            job_cmd = self.__current_job_cmds[job_data.get('job_id')]
+            job_cmd['awaiting_yield'] = True
+            self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
 
 
+    def pop_progress_input_params(self, job_id=None):
+        return self.__get_current_job_cmd(job_id).pop('progress_input_params', None)
 
-    def send_job_results(self, results, job_data=None):
+
+    def get_progress_input_params_batch(self):
+        return [job_cmd.pop('progress_input_params') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('progress_input_params')]
+
+
+    def print_idle_string(self):
+        dot_string = self.dot_string_generator()
+        while not self.__current_job_cmds:
+            print(f'\rWorker idling{next(dot_string)}', end='')
+            time.sleep(1)
+
+
+    def send_job_results(self, results, job_data={}, job_id=None, wait_for_response=True, callback=None, error_callback=None):
         """Process/convert job results and send it to API Server on route /worker_job_result.
 
         Args:
@@ -413,30 +501,32 @@ class APIWorkerInterface():
                 An error occured in API server:                     {'cmd': 'error', 'msg': <error message>} 
                 API Server received data received with a warning:   {'cmd': 'warning', 'msg': <warning message>}
         """
-        if self.rank == 0:
-            if not job_data:
-                job_data = self.get_current_job_data()
-
-            for idx, job in enumerate(self.get_current_job_batch_data()):
-                if job['job_id'] == job_data['job_id']:
-                    self.__current_jobs_finished[idx] = True
-                    break
-
-            results = self.__prepare_output(results, job_data, True)
-            results['auth_key'] = self.auth_key
-            results['job_type'] = self.job_type
-            while True:
-                try:
-                    response =  self.__fetch('/worker_job_result', results)
-                except requests.exceptions.ConnectionError:
-                    print('Connection to server lost')
-                    return
-                if response.status_code == 200:
-
-                    return response
+        if wait_for_response:
+            if self.rank == 0:
+                job_id = job_id or job_data.get('job_id') 
+                job_data = job_data or self.get_current_job_data(job_id)   
+                results = self.__prepare_output(results, job_data, True)
+                if job_id:
+                    del self.__current_job_cmds[job_id]
                 else:
-                    self.check_periodically_if_server_online()
-                    return
+                    self.__current_job_cmds.clear()
+                results['auth_key'] = self.auth_key
+                results['job_type'] = self.job_type
+                while True:
+                    try:
+                        response =  self.__fetch('/worker_job_result', results)
+                    except requests.exceptions.ConnectionError:
+                        print('Connection to server lost')
+                        return
+                    if response.status_code == 200:
+
+                        return response
+                    else:
+                        self.check_periodically_if_server_online()
+                        return
+        else:
+            self.pool.apply_async(self.send_job_results,  args=[results, job_data, job_id], callback=callback, error_callback=error_callback)
+
 
 
     def send_progress(
@@ -445,7 +535,8 @@ class APIWorkerInterface():
         progress_data=None,
         progress_received_callback=None,
         progress_error_callback=None,
-        job_data=None
+        job_data={},
+        job_id=None
         ):
         """Processes/converts job progress information and data and sends it to API Server on route /worker_job_progress asynchronously 
         to main thread using Pool().apply_async() from multiprocessing.dummy. When Api server received progress data, 
@@ -462,10 +553,11 @@ class APIWorkerInterface():
             job_data (dict, optional): To use different job_data than the received one.
             
         """
-        
-        if self.rank == 0 and self.progress_data_received and not self.__current_job_cmd.get('wait_for_result', False):
-            if not job_data:
-                job_data = self.get_current_job_data()
+        job_id = job_id or job_data.get('job_id') 
+        job_data = job_data or self.get_current_job_data(job_id)
+        if self.rank == 0 and self.progress_data_received and not self.__get_current_job_cmd(job_id).get('wait_for_result', False):
+            
+            
             payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
             payload.update(
                 {
@@ -479,59 +571,14 @@ class APIWorkerInterface():
             _ = self.__fetch_async('/worker_job_progress', payload, progress_received_callback, progress_error_callback)
 
 
-    def stream_progress(
-        self,
-        progress,
-        progress_data=None,
-        progress_received_callback=None,
-        progress_error_callback=None,
-        job_data=None,
-        wait_for_response=False
-        ):
-        """Processes/converts job progress information and data and sends it to API Server on route /worker_job_progress asynchronously 
-        to main thread u sing Pool().apply_async() from multiprocessing.dummy. When Api server received progress data, 
-        self.progress_data_received is set to True. Use progress_received_callback and progress_error_callback for response.
-
-        Args:
-            progress (int): current progress (f.i. percent or number of generated tokens)
-            progress_data (dict, optional): dictionary with progress_images or text while worker is computing. 
-                Example progress data: :{'progress_images': [<PIL.Image.Image>, <PIL.Image.Image>, ...]}:. Defaults to None.
-            progress_received_callback (callable, optional): Callback function with API server response as argument. 
-                Called when progress_data is received. Defaults to None.
-            progress_error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError or 
-                http response with :status_code == 503: as argument. Called when API server replied with error. Defaults to None.
-            job_data (dict, optional): To use different job_data than the received one.
-            
-        """
-        
-        if self.rank == 0 and self.progress_data_received and not self.__current_job_cmd.get('wait_for_result', False):
-            if not job_data:
-                job_data = self.get_current_job_data()
-            payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
-            payload.update(
-                {
-                    'job_type': self.job_type,
-                    'auth_key': self.auth_key,
-                    'progress': progress, 
-                    'progress_data': self.__prepare_output(progress_data, job_data, False)
-                }
-            )
-            self.progress_data_received = False
-            if wait_for_response:
-                return self.__fetch('/worker_job_progress', results)
-            else:
-                _ = self.__fetch_async('/worker_job_progress', payload, progress_received_callback, progress_error_callback)
-
-   
-
-
     def send_batch_progress(
         self,
         batch_progress,
         progress_batch_data,
         progress_received_callback=None,
         progress_error_callback=None,
-        job_batch_data=None
+        job_batch_data=[],
+        job_batch_ids=None
         ):
         """Processes/converts job progress information and data and sends it to API Server on route /worker_job_progress asynchronously 
         to main thread using Pool().apply_async() from multiprocessing.dummy. When Api server received progress data, 
@@ -548,22 +595,22 @@ class APIWorkerInterface():
             job_batch_data (list(dict, dict, ...): List of job datas converning jobs ready to send progress
             
         """
-        
-        if self.rank == 0 and self.progress_data_received and not self.__current_job_cmd.get('wait_for_result', False):
-            if not job_batch_data:
-                job_batch_data = self.get_current_job_batch_data()
+        job_batch_ids = job_batch_ids or [job_data.get('job_id') for job_data in job_batch_data]
+        job_batch_data = job_batch_data or [self.get_current_job_data(job_id) for job_id in job_batch_ids]
+        if self.rank == 0 and self.progress_data_received:
             batch_payload = []
             for progress, progress_data, job_data in zip(batch_progress, progress_batch_data, job_batch_data):
-                payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
-                payload.update(
-                    {
-                        'job_type': self.job_type,
-                        'auth_key': self.auth_key,
-                        'progress': progress, 
-                        'progress_data': self.__prepare_output(progress_data, job_data, False)
-                    }
-                )
-                batch_payload.append(payload)
+                if not self.__current_job_cmds.get(job_data.get('job_id')).get('wait_for_result'):
+                    payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
+                    payload.update(
+                        {
+                            'job_type': self.job_type,
+                            'auth_key': self.auth_key,
+                            'progress': progress, 
+                            'progress_data': self.__prepare_output(progress_data, job_data, False)
+                        }
+                    )
+                    batch_payload.append(payload)
             self.progress_data_received = False
             _ = self.__fetch_async('/worker_job_progress', batch_payload, progress_received_callback, progress_error_callback)
 
@@ -583,8 +630,7 @@ class APIWorkerInterface():
                 Called when server replied with error. Defaults to None.
             terminal_output (bool, optional): Prints server status to terminal if True. Defaults to True.
         """        
-
-        
+       
         self.__custom_callback = check_server_callback if check_server_callback else None
         self.__custom_error_callback = check_server_error_callback if check_server_error_callback else None
 
@@ -634,7 +680,7 @@ class APIWorkerInterface():
             parameter = job_data.get(parameter_name)
             if parameter:
                 metadata.add_text(parameter_name, str(parameter))
-        aime_str = f'AIME API {self.__current_job_cmd.get("endpoint_name", self.job_type)}'
+        aime_str = f'AIME API {self.__current_job_cmds.get(job_data.get("job_id")).get("endpoint_name", self.job_type)}'
         metadata.add_text('Artist', aime_str)
         metadata.add_text('ProcessingSoftware', aime_str)
         metadata.add_text('Software', aime_str)
@@ -647,31 +693,38 @@ class APIWorkerInterface():
         metadata = {str(parameter_name): job_data.get(parameter_name) for parameter_name in DEFAULT_IMAGE_METADATA}
         exif = image.getexif()
         exif[0x9286] = json.dumps(metadata) # Comment Tag
-        aime_str = f'AIME API {self.__current_job_cmd.get("endpoint_name", self.job_type)}'
+        aime_str = f'AIME API {self.__current_job_cmds.get(job_data.get("job_id")).get("endpoint_name", self.job_type)}'
         exif[0x013b] = aime_str # Artist
         exif[0x000b] = aime_str # ProcessingSoftware
         exif[0x0131] = aime_str # Software
         exif[0xa43b] = aime_str # ImageEditingSoftware
         return exif
 
-
-    def __init_manager_and_barrier(self):
-        """Register barrier in MyManager, initialize MyManager and assign them to APIWorkerInterface.barrier and APIWorkerInterface.manager
-        """
-        if self.world_size > 1:
-            MyManager.register("barrier", lambda: APIWorkerInterface.barrier)
-            MyManager.register("error_event", lambda: APIWorkerInterface.error_event)
-            APIWorkerInterface.manager = MyManager(("127.0.0.1", SYNC_MANAGER_BASE_PORT + self.gpu_id), authkey=SYNC_MANAGER_AUTH_KEY)
-            # multi GPU synchronization required
+    def __init_and_start_manager(self, port_offset=0):
+        try:
+            APIWorkerInterface.manager = WorkerSyncManager(("127.0.0.1", SYNC_MANAGER_BASE_PORT + port_offset), authkey=SYNC_MANAGER_AUTH_KEY)
             if self.rank == 0:
                 APIWorkerInterface.barrier = Barrier(self.world_size)
+                #APIWorkerInterface.manager.daemon = True
                 APIWorkerInterface.manager.start()
+        
+        except EOFError:
+            print(f"Start of SyncManager failed, since the port is already in use. Retrying with different port.")
+            self.__init_and_start_manager(port_offset + 1) 
 
-            else:
-                time.sleep(2)   # manager has to be started first to connect
-                APIWorkerInterface.manager.connect()
-                APIWorkerInterface.barrier = APIWorkerInterface.manager.barrier()
-                APIWorkerInterface.error_event = APIWorkerInterface.manager.error_event()
+
+    def __init_manager_and_barrier(self):
+        """Register barrier in WorkerSyncManager, initialize WorkerSyncManager and assign them to APIWorkerInterface.barrier and APIWorkerInterface.manager
+        """
+        WorkerSyncManager.register("barrier", lambda: APIWorkerInterface.barrier)
+        WorkerSyncManager.register("error_event", lambda: APIWorkerInterface.error_event)
+        self.__init_and_start_manager()
+
+        if not self.rank == 0:
+            time.sleep(2)
+            APIWorkerInterface.manager.connect()
+            APIWorkerInterface.barrier = APIWorkerInterface.manager.barrier()
+            APIWorkerInterface.error_event = APIWorkerInterface.manager.error_event()
 
 
     def __make_worker_name(self):
@@ -755,7 +808,7 @@ class APIWorkerInterface():
                 mode = 'final'
             else:
                 mode = 'progress'
-            descriptions = self.__current_job_cmd.get(f'{mode}_output_descriptions')
+            descriptions = self.__current_job_cmds.get(job_data.get('job_id'), {}).get(f'{mode}_output_descriptions')
             for output_name, output_description in descriptions.items():
                 self.__convert_output_types_to_string_representation(output_data, output_name, output_description, job_data)
                 if finished:
@@ -917,9 +970,7 @@ class APIWorkerInterface():
             self.__custom_callback = callback
         if error_callback:
             self.__custom_error_callback = error_callback
-        pool = Pool()
-        pool.apply_async(self.__fetch, args=[route, json], callback=self.__async_fetch_callback, error_callback=self.__async_fetch_error_callback)
-        pool.close()
+        self.pool.apply_async(self.__fetch, args=[route, json], callback=self.__async_fetch_callback, error_callback=self.__async_fetch_error_callback)
 
 
     def __async_fetch_callback(self, response):
@@ -938,14 +989,22 @@ class APIWorkerInterface():
                 An error occured in API server:                 {'cmd': 'error', 'msg': <error message>} 
                 API Server received data with a warning:        {'cmd': 'warning', 'msg': <warning message>}
         """
-        
         batch_response = response.json()
         if not isinstance(batch_response, list):
             batch_response = [batch_response]
-        self.jobs_canceled = [res.get('canceled') for res in batch_response]
-        progress_input_params = [res.get('progress_input_params')for res in batch_response]
-        if any(progress_input_params):
-            self.progress_input_params += progress_input_params
+
+        for res in batch_response:
+            job_id = res.get('job_id')
+            if job_id:
+                job_cmd = self.__get_current_job_cmd(job_id)
+                progress_input_params = res.get('progress_input_params')
+                if progress_input_params:
+                    job_cmd.setdefault('progress_input_params', []).extend(progress_input_params)    
+                if res.get('canceled') and not self.is_job_canceled(job_id):
+                    job_cmd['canceled'] = res.get('canceled', False)
+                if job_cmd:
+                    self.__current_job_cmds[job_id] = job_cmd
+
         self.progress_data_received = True     
         if self.print_server_status:
             self.__print_server_status(response)
