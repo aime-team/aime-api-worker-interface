@@ -4,12 +4,20 @@
 
 import time
 from datetime import datetime, timedelta
+import sys
+import signal
+import tty
+import termios
+import gc
+import select
+import threading
+import requests
 
 from multiprocessing import Barrier, Event
 from multiprocessing.managers import SyncManager
 from multiprocessing.pool import ThreadPool
 
-import requests 
+
 import socket
 import io
 
@@ -142,7 +150,6 @@ class APIWorkerInterface():
     manager = None
     barrier = None
     error_event = Event()
-    manager_ready_event = Event()
 
     def __init__(
         self, 
@@ -156,7 +163,8 @@ class APIWorkerInterface():
         image_metadata_params=DEFAULT_IMAGE_METADATA,
         print_server_status = True,
         request_timeout = 60,
-        worker_version=0
+        worker_version=0,
+        exit_callback=None
         ):
         """Constructor
 
@@ -183,20 +191,63 @@ class APIWorkerInterface():
         self.print_server_status = print_server_status
         self.request_timeout = request_timeout
         self.worker_version = worker_version
-        self.progress_input_params = dict()
+        self.exit_callback = exit_callback
 
-        self.pool = ThreadPool()
+
+        self.progress_input_params = dict()
         self.awaiting_job_request = False
         self.__custom_callback = None
         self.__custom_error_callback = None
-        self.worker_name = self.__make_worker_name()
-        self.__init_manager_and_barrier()
         self.progress_data_received = True
-        self.new_job_event = Event()
-        self.__current_job_cmds = APIWorkerInterface.manager.dict() # key job_id
-        self.async_check_server_connection(terminal_output = print_server_status)
-        self.version = self.get_version()
+        self.print_idle_string_thread = None
 
+        self.pool = ThreadPool()
+        self.exit_event = Event()
+        self.new_job_event = Event()
+        self.__init_manager_and_barrier()
+        self.__current_job_cmds = APIWorkerInterface.manager.dict() # key job_id
+        self.old_terminal_settings = termios.tcgetattr(sys.stdin)
+
+        self.version = self.get_version()
+        self.worker_name = self.__make_worker_name()
+
+        self.register_interrupt_signal_handler()
+        self.keyboard_input_listener_thread = self.init_and_start_keyboard_input_listener_thread()
+        
+        self.async_check_server_connection(terminal_output = print_server_status)
+
+
+
+    def init_and_start_keyboard_input_listener_thread(self):
+        keyboard_input_listener_thread = threading.Thread(target=self.keyboard_input_listener)
+        keyboard_input_listener_thread.start()
+        return keyboard_input_listener_thread
+
+
+    def register_interrupt_signal_handler(self):
+        signal.signal(signal.SIGINT, self.signal_handler)
+
+
+    def signal_handler(self, sig, frame):
+        self.gracefully_exit()
+
+        
+    def keyboard_input_listener(self, refresh_interval=1, send_signal=False):
+        try:
+            APIWorkerInterface.barrier.wait()
+            tty.setcbreak(sys.stdin.fileno())
+            while True:
+                if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+                    keyboard_input = sys.stdin.read(1)
+                    if keyboard_input in ('q', '\x1b'): # x1b is ESC
+                        self.exit_event.set()
+                        self.new_job_event.set()
+                        break
+                time.sleep(refresh_interval)
+        finally:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
+            signal.raise_signal(signal.SIGINT)
+            
 
     def get_current_job_data(self, job_id=None):
         """get the job_data of current job to be processed
@@ -265,8 +316,10 @@ class APIWorkerInterface():
         """                  
         return not bool(self.__current_job_cmds)
 
+
     def get_canceled_job_ids(self):
         return [job_id for job_id, job_cmd in self.__current_job_cmds.items() if job_cmd.get('canceled')]
+
 
     def is_job_canceled(self, job_id=None):
         self.__get_current_job_cmd(job_id).get('canceled', False)
@@ -348,6 +401,7 @@ class APIWorkerInterface():
                     }
                     try:
                         response = self.__fetch('/worker_job_request', request)
+
                         if response.status_code == 503:
                             self.check_periodically_if_server_online()
                             continue
@@ -356,7 +410,7 @@ class APIWorkerInterface():
                         continue
                     response_output_str = '! API server responded with {cmd}: {msg}'
                     if response.status_code == 200:
-                        job_cmd = response.json() 
+                        job_cmd = response.json()
                         cmd = job_cmd.get('cmd')
                         msg = job_cmd.get('msg', 'unknown')
                         if cmd == 'job':
@@ -378,14 +432,15 @@ class APIWorkerInterface():
                             print(response_output_str.format(cmd='unknown command', msg=cmd))
                             self.error_event.set()
                             break
-
             if self.world_size > 1:
                 # hold all GPU processes here until we have a new job
                 APIWorkerInterface.barrier.wait()
             if self.error_event.is_set():
-                exit()
+                print('Error')
+                self.gracefully_exit()
             else:
                 # TODO: remove legacy support api_server version < 0.6.0: convert job_data from {} to [{}]
+                
                 job_batch_data = job_cmd.get('job_data', {})
                 if not isinstance(job_batch_data, list):
                     job_batch_data = [job_batch_data]
@@ -406,7 +461,6 @@ class APIWorkerInterface():
             )
             
 
-
     def job_request_generator(self, max_job_batch):
         """Generator yielding the related job_batch_data whenever there are new job_requests or an empty list if there are running jobs but no new job requests.
         Blocking, if there are no running jobs and no new job requests to spare hardware resources.
@@ -416,7 +470,8 @@ class APIWorkerInterface():
 
         Yields:
             list: job_batch_data of new job requests or empty list
-        """        
+        """
+
         while True:
             if not self.awaiting_job_request:
                 jobs_to_start = [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('awaiting_yield')]
@@ -426,9 +481,9 @@ class APIWorkerInterface():
                     job_cmd['awaiting_yield'] = False
                     self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
                 yield jobs_to_start
-                max_job_batch = max_job_batch - len(self.__current_job_cmds)
-                if max_job_batch > 0:
-                    self.job_batch_request(max_job_batch, wait_for_response=False, callback=self.__generator_callback)
+                remaining_job_batch = max_job_batch - len(self.__current_job_cmds)
+                if remaining_job_batch > 0:
+                    self.job_batch_request(remaining_job_batch, wait_for_response=False, callback=self.__generator_callback)
             else:
                 if self.have_all_jobs_finished():
                     self.wait_for_job()
@@ -437,11 +492,29 @@ class APIWorkerInterface():
 
     def wait_for_job(self):
         """Wait until self.new_job_event.set() is called while periodically printing idle string in a non-blocking background thread.
-        """        
-        self.pool.apply_async(self.print_idle_string)
-        self.new_job_event.clear()
+        """
+        self.print_idle_string_thread = threading.Thread(target=self.print_idle_string)
+        self.print_idle_string_thread.start()
         self.new_job_event.wait()
-        print(f'\r', end='')
+        self.new_job_event.clear()
+
+
+
+    def gracefully_exit(self):
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
+        if self.keyboard_input_listener_thread.is_alive():
+            self.keyboard_input_listener_thread.join()
+        if self.print_idle_string_thread:
+            self.print_idle_string_thread.join()
+        if APIWorkerInterface.barrier:
+            APIWorkerInterface.barrier.wait()
+        self.pool.close()
+        del self.__current_job_cmds
+        APIWorkerInterface.manager.shutdown()
+        if self.exit_callback:
+            self.exit_callback()
+        gc.collect()
+        exit('\nGood bye!')
 
 
     def __async_job_batch_request_callback_wrapper(self, callback, job_batch_data):
@@ -475,12 +548,14 @@ class APIWorkerInterface():
         return [job_cmd.pop('progress_input_params') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('progress_input_params')]
 
 
-    def print_idle_string(self):
+    def print_idle_string(self, refresh_interval=1):
         dot_string = self.dot_string_generator()
+        print() # get cursor to next line
         while not self.__current_job_cmds:
-            print(f'\rWorker idling{next(dot_string)}', end='')
-            time.sleep(1)
-
+            print(f'\033[FWorker idling{next(dot_string)}')
+            time.sleep(refresh_interval)
+            if self.exit_event.is_set():
+                break
 
     def send_job_results(self, results, job_data={}, job_id=None, wait_for_response=True, callback=None, error_callback=None):
         """Process/convert job results and send it to API Server on route /worker_job_result.
@@ -555,15 +630,13 @@ class APIWorkerInterface():
         """
         job_id = job_id or job_data.get('job_id') 
         job_data = job_data or self.get_current_job_data(job_id)
-        if self.rank == 0 and self.progress_data_received and not self.__get_current_job_cmd(job_id).get('wait_for_result', False):
-            
-            
+        if self.rank == 0 and self.progress_data_received and not self.__get_current_job_cmd(job_id).get('wait_for_result', False):           
             payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
             payload.update(
                 {
                     'job_type': self.job_type,
                     'auth_key': self.auth_key,
-                    'progress': progress, 
+                    'progress': progress,
                     'progress_data': self.__prepare_output(progress_data, job_data, False)
                 }
             )
@@ -629,8 +702,7 @@ class APIWorkerInterface():
             check_server_error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError as argument
                 Called when server replied with error. Defaults to None.
             terminal_output (bool, optional): Prints server status to terminal if True. Defaults to True.
-        """        
-       
+        """
         self.__custom_callback = check_server_callback if check_server_callback else None
         self.__custom_error_callback = check_server_error_callback if check_server_error_callback else None
 
@@ -700,16 +772,16 @@ class APIWorkerInterface():
         exif[0xa43b] = aime_str # ImageEditingSoftware
         return exif
 
+
     def __init_and_start_manager(self, port_offset=0):
         try:
             APIWorkerInterface.manager = WorkerSyncManager(("127.0.0.1", SYNC_MANAGER_BASE_PORT + port_offset), authkey=SYNC_MANAGER_AUTH_KEY)
             if self.rank == 0:
                 APIWorkerInterface.barrier = Barrier(self.world_size)
-                #APIWorkerInterface.manager.daemon = True
                 APIWorkerInterface.manager.start()
         
         except EOFError:
-            print(f"Start of SyncManager failed, since the port is already in use. Retrying with different port.")
+            print(f"Start of SyncManager failed, since the port is already in use. Retrying with different port...")
             self.__init_and_start_manager(port_offset + 1) 
 
 
