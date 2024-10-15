@@ -216,114 +216,6 @@ class APIWorkerInterface():
         
         self.async_check_server_connection(terminal_output = print_server_status)
 
-
-
-    def init_and_start_keyboard_input_listener_thread(self):
-        keyboard_input_listener_thread = threading.Thread(target=self.keyboard_input_listener)
-        keyboard_input_listener_thread.start()
-        return keyboard_input_listener_thread
-
-
-    def register_interrupt_signal_handler(self):
-        signal.signal(signal.SIGINT, self.signal_handler)
-
-
-    def signal_handler(self, sig, frame):
-        self.gracefully_exit()
-
-        
-    def keyboard_input_listener(self, refresh_interval=1, send_signal=False):
-        try:
-            APIWorkerInterface.barrier.wait()
-            tty.setcbreak(sys.stdin.fileno())
-            while True:
-                if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
-                    keyboard_input = sys.stdin.read(1)
-                    if keyboard_input in ('q', '\x1b'): # x1b is ESC
-                        self.exit_event.set()
-                        self.new_job_event.set()
-                        break
-                time.sleep(refresh_interval)
-        finally:
-            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
-            signal.raise_signal(signal.SIGINT)
-            
-
-    def get_current_job_data(self, job_id=None):
-        """get the job_data of current job to be processed
-
-        Args:
-            job_id (string, optional): For single job processing (max_job_batch=1) the job_id is not required.
-                             For batch job processing (max_job_batch>1) the job_id is required to specify 
-                             the job the data should be returned. Defaults to None.
-
-        Returns:
-            dict: the job_data of the current only job or the job with the given job_id
-        """
-        return self.__get_current_job_cmd(job_id).get('job_data')
-
-
-    def __get_current_job_cmd(self, job_id=None):
-        if job_id:
-            job_cmd = self.__current_job_cmds.get(job_id)
-            if job_cmd is None:
-                raise ValueError(f'No current job with job_id: {job_id}')
-            return job_cmd
-
-        elif len(self.__current_job_cmds) == 1:
-            return self.__current_job_cmds.values()[0]
-        elif len(self.__current_job_cmds) > 1:
-            raise Exception("More then one running jobs: job_id argument required!")
-        else:
-            return None
-
-
-    def get_current_job_batch_data(self):
-        """get the job_datas of the current batch as list 
-
-        Returns:
-            list: the list of job_datas of the current jobs to be processed
-        """
-        return [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if not job_cmd.get('awaiting_yield')]
-
-
-    def get_job_batch_parameter(self, param_name):
-        """get the job_data parameter values for a specific parameter as value array
-
-        Returns:
-            list: The value list of the parameter across the batch
-        """       
-        return [job_data.get(param_name) for job_data in self.get_current_job_batch_data()]      
-
-
-    def has_job_finished(self, job_data={}, job_id=None):
-        """Check if specific job has been addressed with a send_job_results and is thereby finished
-
-        Args:
-            job_data: job_data of the job to check
-
-        Returns:
-            bool: True if job has send job_results, False otherwise
-        """
-        return not bool(self.get_current_job_data(job_id or job_data.get('job_id')))
-
-
-    def have_all_jobs_finished(self):
-        """check if all jobs have been addressed with a send_job_results and are therefore finished
-
-        Returns:
-            bool: True if all jobs have send job_results, False otherwise
-        """                  
-        return not bool(self.__current_job_cmds)
-
-
-    def get_canceled_job_ids(self):
-        return [job_id for job_id, job_cmd in self.__current_job_cmds.items() if job_cmd.get('canceled')]
-
-
-    def is_job_canceled(self, job_id=None):
-        self.__get_current_job_cmd(job_id).get('canceled', False)
-    
             
     def job_request(self):
         """Worker requests a single job from the API Server on endpoint route /worker_job_request. 
@@ -348,7 +240,12 @@ class APIWorkerInterface():
         In MultGPU-Mode (world_size > 1) only rank 0 will get the job_data.
 
         Args:
-            max_job_batch: max job batch size of jobs to process. One to max job batch size jobs will be returned
+            max_job_batch (int): Maximum job batch size to request. 
+            wait_for_response (bool, optional): Whether the method blocks until the API Server response is received. If set to False, callback and error_callback are utilized to get the response. Default to True.
+            callback (callable, optional): Callback function with API server response as argument. 
+                Called, when job request is received by the API Server, if wait_for_response is set to True. Defaults to None.
+            error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError or 
+                http response with :status_code == 503: as argument. Called when API server replied with error, if wait_for_response is set to True. Defaults to None.
 
         Returns:
             list: List of job data with worker [INPUT] parameters received from API server.
@@ -459,7 +356,7 @@ class APIWorkerInterface():
                 callback=lambda result: self.__async_job_batch_request_callback_wrapper(callback, result),
                 error_callback=lambda response: self.__async_job_batch_request_error_callback_wrapper(callback, response)
             )
-            
+
 
     def job_request_generator(self, max_job_batch):
         """Generator yielding the related job_batch_data whenever there are new job_requests or an empty list if there are running jobs but no new job requests.
@@ -490,79 +387,19 @@ class APIWorkerInterface():
                 yield []
 
 
-    def wait_for_job(self):
-        """Wait until self.new_job_event.set() is called while periodically printing idle string in a non-blocking background thread.
-        """
-        self.print_idle_string_thread = threading.Thread(target=self.print_idle_string)
-        self.print_idle_string_thread.start()
-        self.new_job_event.wait()
-        self.new_job_event.clear()
-
-
-
-    def gracefully_exit(self):
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
-        if self.keyboard_input_listener_thread.is_alive():
-            self.keyboard_input_listener_thread.join()
-        if self.print_idle_string_thread:
-            self.print_idle_string_thread.join()
-        if APIWorkerInterface.barrier:
-            APIWorkerInterface.barrier.wait()
-        self.pool.close()
-        del self.__current_job_cmds
-        APIWorkerInterface.manager.shutdown()
-        if self.exit_callback:
-            self.exit_callback()
-        gc.collect()
-        exit('\nGood bye!')
-
-
-    def __async_job_batch_request_callback_wrapper(self, callback, job_batch_data):
-        self.awaiting_job_request = False
-        if callback:
-            callback(job_batch_data)
-        self.new_job_event.set()
-        
-
-    def __async_job_batch_request_error_callback_wrapper(self, callback, response):
-        if callback:
-            callback(response)
-        else:
-            raise requests.exceptions.ConnectionError(response)
-        if self.error_event.is_set():
-            exit()
-
-    def __generator_callback(self, job_batch_data):
-        
-        for job_data in job_batch_data:
-            job_cmd = self.__current_job_cmds[job_data.get('job_id')]
-            job_cmd['awaiting_yield'] = True
-            self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
-
-
-    def pop_progress_input_params(self, job_id=None):
-        return self.__get_current_job_cmd(job_id).pop('progress_input_params', None)
-
-
-    def get_progress_input_params_batch(self):
-        return [job_cmd.pop('progress_input_params') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('progress_input_params')]
-
-
-    def print_idle_string(self, refresh_interval=1):
-        dot_string = self.dot_string_generator()
-        print() # get cursor to next line
-        while not self.__current_job_cmds:
-            print(f'\033[FWorker idling{next(dot_string)}')
-            time.sleep(refresh_interval)
-            if self.exit_event.is_set():
-                break
-
     def send_job_results(self, results, job_data={}, job_id=None, wait_for_response=True, callback=None, error_callback=None):
         """Process/convert job results and send it to API Server on route /worker_job_result.
 
         Args:
             results (dict): worker [OUTPUT] result parameters (f.i. 'image', 'images' or 'text').
                 Example results: ``{'images': [<PIL.Image.Image>, <PIL.Image.Image>, ...]}``
+            job_data (dict, optional): To use different job_data than the received one or to identify the related job if no job_id is given. Defaults to {}.
+            job_id (str, optional): To identify the related job. Defaults to None.
+            wait_for_response (bool, optional): Whether the methods blocks until the API Server response is received. Default to True.
+            callback (callable, optional): Callback function with API server response as argument. 
+                Called, when job result is received by the API Server, if wait_for_response is set to True. Defaults to None.
+            error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError or 
+                http response with :status_code == 503: as argument. Called when API server replied with error, if wait_for_response is set to True. Defaults to None.
 
         Returns:
             requests.models.Response: Http response from API server to the worker.
@@ -625,7 +462,8 @@ class APIWorkerInterface():
                 Called when progress_data is received. Defaults to None.
             progress_error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError or 
                 http response with :status_code == 503: as argument. Called when API server replied with error. Defaults to None.
-            job_data (dict, optional): To use different job_data than the received one.
+            job_data (dict, optional): To use different job_data than the received one or to identify the related job if no job_id is given. Defaults to {}.
+            job_id (str, optional): To identify the related job. Defaults to None.
             
         """
         job_id = job_id or job_data.get('job_id') 
@@ -665,8 +503,8 @@ class APIWorkerInterface():
                 Called when progress_data is received. Defaults to None.
             progress_error_callback (callable, optional): Callback function with requests.exceptions.ConnectionError or 
                 http response with :status_code == 503: as argument. Called when API server replied with error. Defaults to None.
-            job_batch_data (list(dict, dict, ...): List of job datas converning jobs ready to send progress
-            
+            job_batch_data (list(dict, dict, ...), optional): List of job datas to use different job_datas than the received one or to identify the related jobs, if no job_batch_ids are given. Default to [].
+            job_batch_ids (list(int, int, ...), optional): List of job ids to identify the related jobs. Defaults to None.           
         """
         job_batch_ids = job_batch_ids or [job_data.get('job_id') for job_data in job_batch_data]
         job_batch_data = job_batch_data or [self.get_current_job_data(job_id) for job_id in job_batch_ids]
@@ -686,6 +524,182 @@ class APIWorkerInterface():
                     batch_payload.append(payload)
             self.progress_data_received = False
             _ = self.__fetch_async('/worker_job_progress', batch_payload, progress_received_callback, progress_error_callback)
+
+
+    def init_and_start_keyboard_input_listener_thread(self):
+        keyboard_input_listener_thread = threading.Thread(target=self.keyboard_input_listener)
+        keyboard_input_listener_thread.start()
+        return keyboard_input_listener_thread
+
+
+    def register_interrupt_signal_handler(self):
+        signal.signal(signal.SIGINT, self.signal_handler)
+
+
+    def signal_handler(self, sig, frame):
+        self.gracefully_exit()
+
+        
+    def keyboard_input_listener(self, refresh_interval=1, send_signal=False):
+        try:
+            APIWorkerInterface.barrier.wait()
+            tty.setcbreak(sys.stdin.fileno())
+            while True:
+                if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+                    keyboard_input = sys.stdin.read(1)
+                    if keyboard_input in ('q', '\x1b'): # x1b is ESC
+                        self.exit_event.set()
+                        self.new_job_event.set()
+                        break
+                time.sleep(refresh_interval)
+        finally:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
+            signal.raise_signal(signal.SIGINT)
+            
+
+    def get_current_job_data(self, job_id=None):
+        """get the job_data of current job to be processed
+
+        Args:
+            job_id (string, optional): For single job processing (max_job_batch=1) the job_id is not required.
+                             For batch job processing (max_job_batch>1) the job_id is required to specify 
+                             the job the data should be returned. Defaults to None.
+
+        Returns:
+            dict: the job_data of the current only job or the job with the given job_id
+        """
+        return self.__get_current_job_cmd(job_id).get('job_data')
+
+
+    def __get_current_job_cmd(self, job_id=None):
+        if job_id:
+            job_cmd = self.__current_job_cmds.get(job_id)
+            if job_cmd is None:
+                raise ValueError(f'No current job with job_id: {job_id}')
+            return job_cmd
+
+        elif len(self.__current_job_cmds) == 1:
+            return self.__current_job_cmds.values()[0]
+        elif len(self.__current_job_cmds) > 1:
+            raise Exception("More then one running jobs: job_id argument required!")
+        else:
+            return None
+
+
+    def get_current_job_batch_data(self):
+        """get the job_datas of the current batch as list 
+
+        Returns:
+            list: the list of job_datas of the current jobs to be processed
+        """
+        return [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if not job_cmd.get('awaiting_yield')]
+
+
+    def get_job_batch_parameter(self, param_name):
+        """get the job_data parameter values for a specific parameter as value array
+
+        Returns:
+            list: The value list of the parameter across the batch
+        """       
+        return [job_data.get(param_name) for job_data in self.get_current_job_batch_data()]      
+
+
+    def has_job_finished(self, job_data={}, job_id=None):
+        """Check if specific job has been addressed with a send_job_results and is thereby finished
+
+        Args:
+            job_data: job_data of the job to check
+
+        Returns:
+            bool: True if job has send job_results, False otherwise
+        """
+        return not bool(self.get_current_job_data(job_id or job_data.get('job_id')))
+
+
+    def have_all_jobs_finished(self):
+        """check if all jobs have been addressed with a send_job_results and are therefore finished
+
+        Returns:
+            bool: True if all jobs have send job_results, False otherwise
+        """                  
+        return not bool(self.__current_job_cmds)
+
+
+    def get_canceled_job_ids(self):
+        return [job_id for job_id, job_cmd in self.__current_job_cmds.items() if job_cmd.get('canceled')]
+
+
+    def is_job_canceled(self, job_id=None):
+        self.__get_current_job_cmd(job_id).get('canceled', False)
+    
+
+    def wait_for_job(self):
+        """Wait until self.new_job_event.set() is called while periodically printing idle string in a non-blocking background thread.
+        """
+        self.print_idle_string_thread = threading.Thread(target=self.print_idle_string)
+        self.print_idle_string_thread.start()
+        self.new_job_event.wait()
+        self.new_job_event.clear()
+
+
+    def gracefully_exit(self):
+        """Gracefully exit the application while cleaning resources and threads with the possibility to call the custom callback exit_callback given in init of APIWorkerInterface().
+        """
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
+        if self.keyboard_input_listener_thread.is_alive():
+            self.keyboard_input_listener_thread.join()
+        if self.print_idle_string_thread:
+            self.print_idle_string_thread.join()
+        if APIWorkerInterface.barrier:
+            APIWorkerInterface.barrier.wait()
+        self.pool.close()
+        del self.__current_job_cmds
+        APIWorkerInterface.manager.shutdown()
+        if self.exit_callback:
+            self.exit_callback()
+        gc.collect()
+        exit('\nGood bye!')
+
+
+    def __async_job_batch_request_callback_wrapper(self, callback, job_batch_data):
+        self.awaiting_job_request = False
+        if callback:
+            callback(job_batch_data)
+        self.new_job_event.set()
+        
+
+    def __async_job_batch_request_error_callback_wrapper(self, callback, response):
+        if callback:
+            callback(response)
+        else:
+            raise requests.exceptions.ConnectionError(response)
+        if self.error_event.is_set():
+            exit()
+
+    def __generator_callback(self, job_batch_data):
+        
+        for job_data in job_batch_data:
+            job_cmd = self.__current_job_cmds[job_data.get('job_id')]
+            job_cmd['awaiting_yield'] = True
+            self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
+
+
+    def pop_progress_input_params(self, job_id=None):
+        return self.__get_current_job_cmd(job_id).pop('progress_input_params', None)
+
+
+    def get_progress_input_params_batch(self):
+        return [job_cmd.pop('progress_input_params') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('progress_input_params')]
+
+
+    def print_idle_string(self, refresh_interval=1):
+        dot_string = self.dot_string_generator()
+        print() # get cursor to next line
+        while not self.__current_job_cmds:
+            print(f'\033[FWorker idling{next(dot_string)}')
+            time.sleep(refresh_interval)
+            if self.exit_event.is_set():
+                break
 
 
     def async_check_server_connection(
