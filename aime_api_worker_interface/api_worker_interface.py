@@ -623,7 +623,7 @@ class APIWorkerInterface():
 
 
     def is_job_canceled(self, job_id=None):
-        self.__get_current_job_cmd(job_id).get('canceled', False)
+        return self.__get_current_job_cmd(job_id).get('canceled', False)
     
 
     def wait_for_job(self):
@@ -1076,12 +1076,13 @@ class APIWorkerInterface():
             job_id = res.get('job_id')
             if job_id:
                 job_cmd = self.__get_current_job_cmd(job_id)
-                progress_input_params = res.get('progress_input_params')
-                if progress_input_params:
-                    job_cmd.setdefault('progress_input_params', []).extend(progress_input_params)    
-                if res.get('canceled') and not self.is_job_canceled(job_id):
-                    job_cmd['canceled'] = res.get('canceled', False)
                 if job_cmd:
+                    progress_input_params = res.get('progress_input_params')
+                    if progress_input_params:
+                        job_cmd.setdefault('progress_input_params', []).extend(progress_input_params)  
+                    canceled = res.get('canceled', False)
+                    if canceled and not job_cmd.get('canceled'):
+                        job_cmd['canceled'] = True
                     self.__current_job_cmds[job_id] = job_cmd
 
         self.progress_data_received = True     
