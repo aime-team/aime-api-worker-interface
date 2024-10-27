@@ -333,16 +333,10 @@ class APIWorkerInterface():
                 # hold all GPU processes here until we have a new job
                 APIWorkerInterface.barrier.wait()
             if self.error_event.is_set():
-                print('Error')
+                print('Error Event')
                 self.gracefully_exit()
             else:
-                # TODO: remove legacy support api_server version < 0.6.0: convert job_data from {} to [{}]
-                
-                job_batch_data = job_cmd.get('job_data', {})
-                if not isinstance(job_batch_data, list):
-                    job_batch_data = [job_batch_data]
-                    
-                
+                job_batch_data = job_cmd.get('job_data', [])                
                 for job_data in job_batch_data:
                     if job_data:
                         job_cmd['job_data'] = job_data
@@ -438,7 +432,6 @@ class APIWorkerInterface():
                         return
         else:
             self.pool.apply_async(self.send_job_results,  args=[results, job_data, job_id], callback=callback, error_callback=error_callback)
-
 
 
     def send_progress(
