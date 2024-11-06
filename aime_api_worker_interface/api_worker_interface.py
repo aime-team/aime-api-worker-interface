@@ -308,6 +308,7 @@ class APIWorkerInterface():
                     response_output_str = '! API server responded with {cmd}: {msg}'
                     if response.status_code == 200:
                         job_cmd = response.json()
+                        job_cmd['last_activity'] = time.time()
                         cmd = job_cmd.get('cmd')
                         msg = job_cmd.get('msg', 'unknown')
                         if cmd == 'job':
@@ -364,21 +365,20 @@ class APIWorkerInterface():
         """
 
         while True:
-            if not self.awaiting_job_request:
-                jobs_to_start = [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('awaiting_yield')]
+            remaining_job_batch = max_job_batch - len(self.__current_job_cmds)
+            if remaining_job_batch > 0 and not self.awaiting_job_request:
+                self.job_batch_request(remaining_job_batch, wait_for_response=False, callback=self.__generator_callback)
+
+            jobs_to_start = [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('awaiting_yield')]
+            for job_data in jobs_to_start:
+                job_cmd = self.__current_job_cmds[job_data.get('job_id')]
+                job_cmd['awaiting_yield'] = False
+                self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
+            yield jobs_to_start
+
                 
-                for job_data in jobs_to_start:
-                    job_cmd = self.__current_job_cmds[job_data.get('job_id')]
-                    job_cmd['awaiting_yield'] = False
-                    self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
-                yield jobs_to_start
-                remaining_job_batch = max_job_batch - len(self.__current_job_cmds)
-                if remaining_job_batch > 0:
-                    self.job_batch_request(remaining_job_batch, wait_for_response=False, callback=self.__generator_callback)
-            else:
-                if self.have_all_jobs_finished():
-                    self.wait_for_job()
-                yield []
+            if self.have_all_jobs_finished():
+                self.wait_for_job()
 
 
     def send_job_results(self, results, job_data={}, job_id=None, wait_for_response=True, callback=None, error_callback=None):
@@ -409,11 +409,11 @@ class APIWorkerInterface():
         """
         if wait_for_response:
             if self.rank == 0:
-                job_id = job_id or job_data.get('job_id') 
+                job_id = job_id or job_data.get('job_id')
                 job_data = job_data or self.get_current_job_data(job_id)   
                 results = self.__prepare_output(results, job_data, True)
                 if job_id:
-                    del self.__current_job_cmds[job_id]
+                    self.__current_job_cmds.pop(job_id, None)
                 else:
                     self.__current_job_cmds.clear()
                 results['auth_key'] = self.auth_key
@@ -473,6 +473,7 @@ class APIWorkerInterface():
             )
             self.progress_data_received = False
             _ = self.__fetch_async('/worker_job_progress', payload, progress_received_callback, progress_error_callback)
+            self.update_job_activity(job_id)
 
 
     def send_batch_progress(
@@ -517,6 +518,8 @@ class APIWorkerInterface():
                     batch_payload.append(payload)
             self.progress_data_received = False
             _ = self.__fetch_async('/worker_job_progress', batch_payload, progress_received_callback, progress_error_callback)
+            for job_id in job_batch_ids:
+                self.update_job_activity(job_id)
 
 
     def init_and_start_keyboard_input_listener_thread(self):
@@ -551,15 +554,15 @@ class APIWorkerInterface():
             
 
     def get_current_job_data(self, job_id=None):
-        """get the job_data of current job to be processed
+        """Get the job_data of current job to be processed
 
         Args:
             job_id (string, optional): For single job processing (max_job_batch=1) the job_id is not required.
                              For batch job processing (max_job_batch>1) the job_id is required to specify 
-                             the job the data should be returned. Defaults to None.
+                             the job and the job_data is going to be returned. Defaults to None.
 
         Returns:
-            dict: the job_data of the current only job or the job with the given job_id
+            dict: the job_data of the current only job or of the job with the given job_id
         """
         return self.__get_current_job_cmd(job_id).get('job_data')
 
@@ -607,6 +610,23 @@ class APIWorkerInterface():
             bool: True if job has send job_results, False otherwise
         """
         return not bool(self.get_current_job_data(job_id or job_data.get('job_id')))
+
+
+    def check_for_unresponsive_jobs(self, timeout=60):
+        unresponsive_jobs = []
+        if self.__current_job_cmds:
+            for job_id, job_cmd in self.__current_job_cmds.items():
+                if (not job_cmd.get('wait_for_result') and not job_cmd.get('awaiting_yield')) and ((time.time() - job_cmd.get('last_activity', 0)) > timeout):
+                    unresponsive_jobs.append(job_id)
+        return unresponsive_jobs
+        #return [job_id for job_id, job_cmd in self.__current_job_cmds.items() if (not job_cmd.get('wait_for_result') and not job_cmd.get('awaiting_yield')) and ((time.time() - job_cmd.get('last_activity', 0)) > timeout)]
+
+
+    def update_job_activity(self, job_id):
+        job_cmd = self.__current_job_cmds.get(job_id)
+        if job_cmd:
+            job_cmd['last_activity'] = time.time()
+            self.__current_job_cmds[job_id] = job_cmd
 
 
     def have_all_jobs_finished(self):
@@ -668,6 +688,7 @@ class APIWorkerInterface():
             raise requests.exceptions.ConnectionError(response)
         if self.error_event.is_set():
             exit()
+
 
     def __generator_callback(self, job_batch_data):
         
