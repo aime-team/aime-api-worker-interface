@@ -529,7 +529,7 @@ class APIWorkerInterface():
 
 
     def register_interrupt_signal_handler(self):
-        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGUSR1, self.signal_handler)
 
 
     def signal_handler(self, sig, frame):
@@ -550,7 +550,7 @@ class APIWorkerInterface():
                 time.sleep(refresh_interval)
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.old_terminal_settings)
-            signal.raise_signal(signal.SIGINT)
+            signal.raise_signal(signal.SIGUSR1)
             
 
     def get_current_job_data(self, job_id=None):
