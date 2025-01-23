@@ -506,7 +506,7 @@ class APIWorkerInterface():
             batch_payload = []
             for progress, progress_data, job_data in zip(batch_progress, progress_batch_data, job_batch_data):
                 if not self.__current_job_cmds.get(job_data.get('job_id')).get('wait_for_result'):
-                    payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
+                    payload = {parameter: job_data.get(parameter) for parameter in SERVER_PARAMETERS}
                     payload.update(
                         {
                             'job_type': self.job_type,
