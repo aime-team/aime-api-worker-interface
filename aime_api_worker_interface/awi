@@ -1,0 +1,8 @@
+#!/bin/bash
+if [ "$1" == "download-weights" ]; then
+    python3 aime_api_worker_interface/download_weights.py "${@:2}"
+elif [ "$1" == "" ]; then
+    echo "AIME API Worker Interface"
+else
+    echo "Unknown command."
+fi
