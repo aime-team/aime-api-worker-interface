@@ -1,6 +1,12 @@
 #!/bin/bash
+
 if [ "$1" == "download-weights" ]; then
-    python3 aime_api_worker_interface/download_weights.py "${@:2}"
+    python3 -c "
+import sys
+from aime_api_worker_interface import download_weights
+sys.argv = ['download_weights.py'] + sys.argv[1:]
+download_weights.main()
+" "${@:2}"
 elif [ "$1" == "" ]; then
     echo "AIME API Worker Interface"
 else
