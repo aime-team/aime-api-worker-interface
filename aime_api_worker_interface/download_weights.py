@@ -39,6 +39,10 @@ class ModelDownloader:
             '-wo', '--max_workers', type=int, default=8,
             help='Maximum number of workers for downloading'
         )
+        parser.add_argument(
+            '-or', '--include_original', action='store_true',
+            help='Include folder with original weights',
+        )
         args = parser.parse_args()
         args.model = args.model.strip('/')
         return args
@@ -129,7 +133,8 @@ class ModelDownloader:
         snapshot_download(
             repo_id=self.args.model,
             max_workers=self.args.max_workers,
-            local_dir=self.args.download_dir
+            local_dir=self.args.download_dir,
+            ignore_patterns='original/*' if not self.args.include_original else None
         )
         sys.stdout.flush()
         print('\nDownload Complete')
