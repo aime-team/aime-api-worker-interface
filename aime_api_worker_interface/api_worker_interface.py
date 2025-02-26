@@ -13,9 +13,9 @@ import select
 import threading
 import requests
 
-from multiprocessing import Barrier, Event
+from multiprocessing import Barrier, Event, Lock
 from multiprocessing.managers import SyncManager
-from multiprocessing.pool import ThreadPool
+from concurrent.futures import ThreadPoolExecutor
 
 
 import socket
@@ -200,8 +200,8 @@ class APIWorkerInterface():
         self.__custom_error_callback = None
         self.progress_data_received = True
         self.print_idle_string_thread = None
-
-        self.pool = ThreadPool()
+        self.pool_executor = ThreadPoolExecutor(max_workers=None)
+        self.lock = Lock()
         self.exit_event = Event()
         self.new_job_event = Event()
         self.__init_manager_and_barrier()
@@ -318,6 +318,8 @@ class APIWorkerInterface():
                         elif cmd == 'error':
                             print(response_output_str.format(cmd=cmd, msg=msg))
                             self.error_event.set()
+                            if error_callback:
+                                self.__async_job_batch_request_error_callback_wrapper(callback, response)
                             break
                         elif cmd == 'warning':
                             counter += 1
@@ -342,15 +344,12 @@ class APIWorkerInterface():
                     if job_data:
                         job_cmd['job_data'] = job_data
                         self.__current_job_cmds[job_data.get('job_id')] = job_cmd
+                if callback:
+                    self.__async_job_batch_request_callback_wrapper(callback, job_batch_data)
                 return job_batch_data
         else:
             self.awaiting_job_request = True
-            self.pool.apply_async(
-                self.job_batch_request,
-                args=[max_job_batch], 
-                callback=lambda result: self.__async_job_batch_request_callback_wrapper(callback, result),
-                error_callback=lambda response: self.__async_job_batch_request_error_callback_wrapper(callback, response)
-            )
+            self.pool_executor.submit(self.job_batch_request, max_job_batch, True, callback, error_callback)
 
 
     def job_request_generator(self, max_job_batch):
@@ -365,15 +364,16 @@ class APIWorkerInterface():
         """
 
         while True:
-            remaining_job_batch = max_job_batch - len(self.__current_job_cmds)
-            if remaining_job_batch > 0 and not self.awaiting_job_request:
-                self.job_batch_request(remaining_job_batch, wait_for_response=False, callback=self.__generator_callback)
+            with self.lock:
+                remaining_job_batch = max_job_batch - len(self.__current_job_cmds)
+                if remaining_job_batch > 0 and not self.awaiting_job_request:
+                    self.job_batch_request(remaining_job_batch, wait_for_response=False, callback=self.__generator_callback)
 
-            jobs_to_start = [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('awaiting_yield')]
-            for job_data in jobs_to_start:
-                job_cmd = self.__current_job_cmds[job_data.get('job_id')]
-                job_cmd['awaiting_yield'] = False
-                self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
+                jobs_to_start = [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('awaiting_yield')]
+                for job_data in jobs_to_start:
+                    job_cmd = self.__current_job_cmds[job_data.get('job_id')]
+                    job_cmd['awaiting_yield'] = False
+                    self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
             yield jobs_to_start
 
                 
@@ -412,26 +412,48 @@ class APIWorkerInterface():
                 job_id = job_id or job_data.get('job_id')
                 job_data = job_data or self.get_current_job_data(job_id)   
                 results = self.__prepare_output(results, job_data, True)
-                if job_id:
-                    self.__current_job_cmds.pop(job_id, None)
-                else:
-                    self.__current_job_cmds.clear()
+
+                with self.lock:
+                    if job_id:
+                        self.__current_job_cmds.pop(job_id, None)
+                    else:
+                        self.__current_job_cmds.clear()
                 results['auth_key'] = self.auth_key
                 results['job_type'] = self.job_type
                 while True:
                     try:
                         response =  self.__fetch('/worker_job_result', results)
                     except requests.exceptions.ConnectionError:
-                        print('Connection to server lost')
-                        return
-                    if response.status_code == 200:
+                        self.check_periodically_if_server_online()
+                        continue
+                    except Exception as exception:
+                        if error_callback:
+                            error_callback(exception)
+                        else:
+                            raise exception
 
+                    if response.status_code == 200:
+                        if callback:
+                            callback(response)
                         return response
                     else:
+                        if error_callback:
+                            error_callback(exception)
                         self.check_periodically_if_server_online()
-                        return
+                        continue
         else:
-            self.pool.apply_async(self.send_job_results,  args=[results, job_data, job_id], callback=callback, error_callback=error_callback)
+            self.pool_executor.submit(self.send_job_results, results, job_data, job_id, True, callback, error_callback)
+
+
+    def __job_result_callback(self, future, callback, error_callback):
+        try:
+            result = future.result()
+            if callback:
+                callback(result)
+            return result
+        except Exception as error:
+            if error_callback:
+                error_callback(error)
 
 
     def send_progress(
@@ -626,7 +648,8 @@ class APIWorkerInterface():
         job_cmd = self.__current_job_cmds.get(job_id)
         if job_cmd:
             job_cmd['last_activity'] = time.time()
-            self.__current_job_cmds[job_id] = job_cmd
+            with self.lock:
+                self.__current_job_cmds[job_id] = job_cmd
 
 
     def have_all_jobs_finished(self):
@@ -665,7 +688,6 @@ class APIWorkerInterface():
             self.print_idle_string_thread.join()
         if APIWorkerInterface.barrier:
             APIWorkerInterface.barrier.wait()
-        self.pool.close()
         del self.__current_job_cmds
         APIWorkerInterface.manager.shutdown()
         if self.exit_callback:
@@ -710,7 +732,7 @@ class APIWorkerInterface():
         dot_string = self.dot_string_generator()
         print() # get cursor to next line
         while not self.__current_job_cmds:
-            print(f'\033[FWorker idling{next(dot_string)}')
+            print(f'\033[F\033[KWorker idling{next(dot_string)}')
             time.sleep(refresh_interval)
             if self.exit_event.is_set():
                 break
@@ -1028,7 +1050,7 @@ class APIWorkerInterface():
             print(output_str)
 
 
-    def __fetch(self, route, json=None):
+    def __fetch(self, route, json=None, callback=None, error_callback=None):
         """Send post request on given route on API server with given arguments
 
         Args:
@@ -1046,10 +1068,20 @@ class APIWorkerInterface():
         """
         try:
             response = requests.post(self.api_server + route, json=json, timeout=self.request_timeout)
-        except requests.Timeout:
-            raise requests.exceptions.ConnectionError
+            if callback:
+                callback(response)
+            return response
+        except requests.Timeout as error:
+            if error_callback:
+                error_callback(error)
+            else:
+                raise requests.exceptions.ConnectionError
+        except Exception as error:
+            if error_callback:
+                error_callback(error)
+            else:
+                raise error
 
-        return response
 
 
     def __fetch_async(
@@ -1070,7 +1102,8 @@ class APIWorkerInterface():
             self.__custom_callback = callback
         if error_callback:
             self.__custom_error_callback = error_callback
-        self.pool.apply_async(self.__fetch, args=[route, json], callback=self.__async_fetch_callback, error_callback=self.__async_fetch_error_callback)
+        self.pool_executor.submit(self.__fetch, route, json, self.__async_fetch_callback, self.__async_fetch_error_callback)
+
 
 
     def __async_fetch_callback(self, response):
