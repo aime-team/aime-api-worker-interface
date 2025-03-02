@@ -811,11 +811,16 @@ class APIWorkerInterface():
         return metadata
 
     def get_binary(self, job_data, attrib):
-        base64_data = job_data[attrib].split(',')[1]
-        return base64.b64decode(base64_data)
+        base64_data = job_data.get(attrib, None)
+        if not base64_data:
+            return None
+        return base64.b64decode(base64_data.split(',')[1])
     
     def get_binary_format(self, job_data, attrib):
-        return job_data[attrib].split(',')[0]
+        base64_data = job_data.get(attrib, None)
+        if not base64_data:
+            return None
+        return base64_data.split(',')[0]
 
     def get_exif_metadata(self, image, job_data):
         metadata = {str(parameter_name): job_data.get(parameter_name) for parameter_name in DEFAULT_IMAGE_METADATA}
