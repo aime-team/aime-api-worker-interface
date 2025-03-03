@@ -29,7 +29,6 @@ import pkg_resources
 
 SYNC_MANAGER_BASE_PORT  =  10042
 SYNC_MANAGER_AUTH_KEY   = b"aime_api_worker"
-SERVER_PARAMETERS = ['job_id', 'start_time', 'start_time_compute']
 DEFAULT_IMAGE_METADATA = [
     'prompt', 'negative_prompt', 'seed', 'base_steps', 'refine_steps', 'scale', 
     'aesthetic_score', 'negative_aesthetic_score', 'img2img_strength', 'base_sampler', 
@@ -484,15 +483,13 @@ class APIWorkerInterface():
         job_id = job_id or job_data.get('job_id') 
         job_data = job_data or self.get_current_job_data(job_id)
         if self.rank == 0 and self.progress_data_received and not self.__get_current_job_cmd(job_id).get('wait_for_result', False):           
-            payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
-            payload.update(
-                {
-                    'job_type': self.job_type,
-                    'auth_key': self.auth_key,
-                    'progress': progress,
-                    'progress_data': self.__prepare_output(progress_data, job_data, False)
-                }
-            )
+            payload = {
+                'job_id': job_data.get('job_id'), # if job_id is None for single jobs
+                'job_type': self.job_type,
+                'auth_key': self.auth_key,
+                'progress': progress,
+                'progress_data': self.__prepare_output(progress_data, job_data, False)
+            }
             self.progress_data_received = False
             _ = self.__fetch_async('/worker_job_progress', payload, progress_received_callback, progress_error_callback)
             self.update_job_activity(job_id)
@@ -527,16 +524,15 @@ class APIWorkerInterface():
         if self.rank == 0 and self.progress_data_received:
             batch_payload = []
             for progress, progress_data, job_data in zip(batch_progress, progress_batch_data, job_batch_data):
-                if not self.__current_job_cmds.get(job_data.get('job_id')).get('wait_for_result'):
-                    payload = {parameter: job_data.get(parameter) for parameter in SERVER_PARAMETERS}
-                    payload.update(
-                        {
-                            'job_type': self.job_type,
-                            'auth_key': self.auth_key,
-                            'progress': progress, 
-                            'progress_data': self.__prepare_output(progress_data, job_data, False)
-                        }
-                    )
+                job_id = job_data.get('job_id')
+                if not self.__current_job_cmds.get(job_id).get('wait_for_result'):
+                    payload = {
+                        'job_id': job_id,
+                        'job_type': self.job_type,
+                        'auth_key': self.auth_key,
+                        'progress': progress, 
+                        'progress_data': self.__prepare_output(progress_data, job_data, False)
+                    }
                     batch_payload.append(payload)
             self.progress_data_received = False
             _ = self.__fetch_async('/worker_job_progress', batch_payload, progress_received_callback, progress_error_callback)
@@ -908,7 +904,7 @@ class APIWorkerInterface():
 
 
     def __prepare_output(self, output_data, job_data, finished):
-        """Adds SERVER_PARAMETERS to output_data. Converts parameters in output data from type 'image' and 'image_list' to base64 strings. 
+        """Adds meta parameters to output_data. Converts parameters in output data from type 'image' and 'image_list' to base64 strings. 
         Adds [OUTPUT] parameters found in job_data[output_description/progress_description] to output_data
 
         Args:
@@ -923,14 +919,14 @@ class APIWorkerInterface():
             output_data = output_data.copy()
             output_data['version'] = self.version
             output_data['auth'] = self.worker_name
+            job_id = job_data.get('job_id')
             if finished:
-                for parameter in SERVER_PARAMETERS:
-                    output_data[parameter] = job_data.get(parameter)
+                output_data['job_id'] = job_id
                 output_data['job_type'] = self.job_type
                 mode = 'final'
             else:
                 mode = 'progress'
-            descriptions = self.__current_job_cmds.get(job_data.get('job_id'), {}).get(f'{mode}_output_descriptions')
+            descriptions = self.__current_job_cmds.get(job_id, {}).get(f'{mode}_output_descriptions')
             for output_name, output_description in descriptions.items():
                 self.__convert_output_types_to_string_representation(output_data, output_name, output_description, job_data)
                 if finished:
