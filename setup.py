@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='aime-api-worker-interface',
-    version='0.9.7',
+    version='0.9.8',
     author='AIME',
     author_email='carlo@aime.info',
     scripts=['aime_api_worker_interface/awi'],

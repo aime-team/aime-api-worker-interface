@@ -199,6 +199,7 @@ class APIWorkerInterface():
         self.__custom_error_callback = None
         self.progress_data_received = True
         self.print_idle_string_thread = None
+        self.port_offset = 0
         self.pool_executor = ThreadPoolExecutor(max_workers=None)
         self.lock = Lock()
         self.exit_event = Event()
@@ -832,6 +833,7 @@ class APIWorkerInterface():
 
     def __init_and_start_manager(self, port_offset=0):
         try:
+            self.port_offset = port_offset
             APIWorkerInterface.manager = WorkerSyncManager(("127.0.0.1", SYNC_MANAGER_BASE_PORT + port_offset), authkey=SYNC_MANAGER_AUTH_KEY)
             if self.rank == 0:
                 APIWorkerInterface.barrier = Barrier(self.world_size)
@@ -861,14 +863,8 @@ class APIWorkerInterface():
 
         Returns:
             str: name of the worker like <hostname>_<gpu_name>_<gpu_id> if gpu_name is given, , else <hostname>_GPU_<gpu_id>
-        """        
-        worker_name = socket.gethostname()
-        for id in range(self.world_size):
-            if self.gpu_name:
-                worker_name += f'_{self.gpu_name}_{id+self.gpu_id}'
-            else:
-                worker_name += f'_GPU{id+self.gpu_id}'
-        return worker_name
+        """    
+        return f'{socket.gethostname()}#{self.port_offset}_{self.gpu_name}'
 
 
     def __convert_output_types_to_string_representation(
