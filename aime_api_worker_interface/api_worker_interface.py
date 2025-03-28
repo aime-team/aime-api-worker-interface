@@ -44,7 +44,7 @@ class APIWorkerInterface():
     """Interface for deep learning models to communicate with AIME API Server.
 
     Args:
-        api_server (str): Address of API Server. Example: 'http://api.aime.team'.
+        api_server (str): Address of API Server. Example: 'http://127.0.0.1'.
         job_type (str): Type of job . Example: "stable_diffusion_xl_txt2img".
         auth_key (str): key to authorize worker to connect with API Server.
         gpu_id (int, optional): ID of GPU the worker runs on. Defaults to 0.
@@ -72,7 +72,7 @@ class APIWorkerInterface():
 
             from aime_api_worker_interface import APIWorkerInterface
                 
-            api_worker = APIWorkerInterface('http://api.aime.team', 'llama2_chat', <auth_key>)
+            api_worker = APIWorkerInterface('http://127.0.0.1', 'llama2_chat', <auth_key>)
             while True:
                 job_data = api_worker.job_request()
                 output = do_deep_learning_worker_calculations(job_data, ...)
@@ -85,7 +85,7 @@ class APIWorkerInterface():
 
             from aime_api_worker_interface import APIWorkerInterface           
 
-            api_worker = APIWorkerInterface('http://api.aime.team', 'llama2_chat', <auth_key>)
+            api_worker = APIWorkerInterface('http://127.0.0.1', 'llama2_chat', <auth_key>)
             while True:
                 job_data = api_worker.job_request()
                 
@@ -109,7 +109,7 @@ class APIWorkerInterface():
                     api_worker.send_progress(progress, progress_data)
 
 
-            api_worker = APIWorkerInterface('http://api.aime.team', 'llama2_chat', <auth_key>)
+            api_worker = APIWorkerInterface('http://127.0.0.1', 'llama2_chat', <auth_key>)
             callback = Callback(api_worker)
             
             while True:
@@ -138,7 +138,7 @@ class APIWorkerInterface():
                     self.api_worker.send_job_results(result) 
 
 
-            api_worker = APIWorkerInterface('http://api.aime.team', 'llama2_chat', <auth_key>)
+            api_worker = APIWorkerInterface('http://127.0.0.1', 'llama2_chat', <auth_key>)
             callback = Callback(api_worker)
             
             while True:
@@ -168,7 +168,7 @@ class APIWorkerInterface():
         """Constructor
 
         Args:
-            api_server (str): Address of API Server. Example: 'http://api.aime.team'.
+            api_server (str): Address of API Server. Example: 'http://127.0.0.1'.
             job_type (str): Type of job . Example: "stable_diffusion_xl_txt2img".
             auth_key (str): key to authorize worker to connect with API Server.
             gpu_id (int, optional): ID of GPU the worker runs on. Defaults to 0.
