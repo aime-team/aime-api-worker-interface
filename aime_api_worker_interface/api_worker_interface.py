@@ -163,7 +163,13 @@ class APIWorkerInterface():
         print_server_status = True,
         request_timeout = 60,
         worker_version=0,
-        exit_callback=None
+        exit_callback=None,
+        model_label=None,
+        model_quantization=None,
+        model_size=None,
+        model_family=None,
+        model_type=None,
+        model_repo_name=None
         ):
         """Constructor
 
@@ -178,6 +184,15 @@ class APIWorkerInterface():
             image_metadata_params (list, optional): Parameters to add as metadata to images (Currently only 'PNG'). Defaults to [
                 'prompt', 'negative_prompt', 'seed', ...]
             print_server_status (bool, optional): Whether the server status is printed at start. Defaults to True
+            request_timeout (int, optional): Timeout until the worker receives the job_timeout = request_timeout * 0.9 the API server .
+            worker_version (int, optional): Worker version no.
+            exit_callback (callable, optional): Callback function called at exit of the worker.
+            model_label (str, optional): Label of the model for display.
+            model_quantization (str, optional): Quantization of the model (int4, fp8, fp16, ...).
+            model_size (str, optional): Model size in number of billion parameters (8B, 70B, ...).
+            model_family (str, optional): Model family ('Llama', 'Mixtral', ...).
+            model_type (str, optional): Model type like 'LLM'.
+            model_repo_name (str, optional): Name of the model repository folder.
         """        
         self.api_server = api_server
         self.job_type = job_type
@@ -191,7 +206,12 @@ class APIWorkerInterface():
         self.request_timeout = request_timeout
         self.worker_version = worker_version
         self.exit_callback = exit_callback
-
+        self.model_label = model_label
+        self.model_quantization = model_quantization
+        self.model_size = model_size
+        self.model_family = model_family
+        self.model_type = model_type
+        self.model_repo_name = model_repo_name
 
         self.progress_input_params = dict()
         self.awaiting_job_request = False
@@ -294,6 +314,12 @@ class APIWorkerInterface():
                         'version': self.version,
                         'worker_version': self.worker_version,
                         'request_timeout': self.request_timeout,
+                        'model_label': self.model_label,
+                        'model_quantization': self.model_quantization,
+                        'model_size': self.model_size,
+                        'model_family': self.model_family,
+                        'model_type': self.model_type,
+                        'model_repo_name': self.model_repo_name,
                         'max_job_batch': max_job_batch,
                     }
                     try:
