@@ -13,9 +13,9 @@ import select
 import threading
 import requests
 
-from multiprocessing import Barrier, Event, Lock
+from multiprocessing import Barrier, Event
 from multiprocessing.managers import SyncManager
-from concurrent.futures import ThreadPoolExecutor
+from multiprocessing.pool import ThreadPool
 
 
 import socket
@@ -29,6 +29,7 @@ import pkg_resources
 
 SYNC_MANAGER_BASE_PORT  =  10042
 SYNC_MANAGER_AUTH_KEY   = b"aime_api_worker"
+SERVER_PARAMETERS = ['job_id', 'start_time', 'start_time_compute']
 DEFAULT_IMAGE_METADATA = [
     'prompt', 'negative_prompt', 'seed', 'base_steps', 'refine_steps', 'scale', 
     'aesthetic_score', 'negative_aesthetic_score', 'img2img_strength', 'base_sampler', 
@@ -163,13 +164,7 @@ class APIWorkerInterface():
         print_server_status = True,
         request_timeout = 60,
         worker_version=0,
-        exit_callback=None,
-        model_label=None,
-        model_quantization=None,
-        model_size=None,
-        model_family=None,
-        model_type=None,
-        model_repo_name=None
+        exit_callback=None
         ):
         """Constructor
 
@@ -184,15 +179,6 @@ class APIWorkerInterface():
             image_metadata_params (list, optional): Parameters to add as metadata to images (Currently only 'PNG'). Defaults to [
                 'prompt', 'negative_prompt', 'seed', ...]
             print_server_status (bool, optional): Whether the server status is printed at start. Defaults to True
-            request_timeout (int, optional): Timeout until the worker receives the job_timeout = request_timeout * 0.9 the API server .
-            worker_version (int, optional): Worker version no.
-            exit_callback (callable, optional): Callback function called at exit of the worker.
-            model_label (str, optional): Label of the model for display.
-            model_quantization (str, optional): Quantization of the model (int4, fp8, fp16, ...).
-            model_size (str, optional): Model size in number of billion parameters (8B, 70B, ...).
-            model_family (str, optional): Model family ('Llama', 'Mixtral', ...).
-            model_type (str, optional): Model type like 'LLM'.
-            model_repo_name (str, optional): Name of the model repository folder.
         """        
         self.api_server = api_server
         self.job_type = job_type
@@ -200,18 +186,13 @@ class APIWorkerInterface():
         self.gpu_id = gpu_id
         self.world_size = world_size
         self.rank = rank
-        self.gpu_name = gpu_name.replace(' ', '_')
+        self.gpu_name = gpu_name
         self.image_metadata_params = image_metadata_params
         self.print_server_status = print_server_status
         self.request_timeout = request_timeout
         self.worker_version = worker_version
         self.exit_callback = exit_callback
-        self.model_label = model_label
-        self.model_quantization = model_quantization
-        self.model_size = model_size
-        self.model_family = model_family
-        self.model_type = model_type
-        self.model_repo_name = model_repo_name
+
 
         self.progress_input_params = dict()
         self.awaiting_job_request = False
@@ -219,9 +200,8 @@ class APIWorkerInterface():
         self.__custom_error_callback = None
         self.progress_data_received = True
         self.print_idle_string_thread = None
-        self.port_offset = 0
-        self.pool_executor = ThreadPoolExecutor(max_workers=None)
-        self.lock = Lock()
+
+        self.pool = ThreadPool()
         self.exit_event = Event()
         self.new_job_event = Event()
         self.__init_manager_and_barrier()
@@ -314,12 +294,6 @@ class APIWorkerInterface():
                         'version': self.version,
                         'worker_version': self.worker_version,
                         'request_timeout': self.request_timeout,
-                        'model_label': self.model_label,
-                        'model_quantization': self.model_quantization,
-                        'model_size': self.model_size,
-                        'model_family': self.model_family,
-                        'model_type': self.model_type,
-                        'model_repo_name': self.model_repo_name,
                         'max_job_batch': max_job_batch,
                     }
                     try:
@@ -344,8 +318,6 @@ class APIWorkerInterface():
                         elif cmd == 'error':
                             print(response_output_str.format(cmd=cmd, msg=msg))
                             self.error_event.set()
-                            if error_callback:
-                                self.__async_job_batch_request_error_callback_wrapper(callback, response)
                             break
                         elif cmd == 'warning':
                             counter += 1
@@ -370,12 +342,15 @@ class APIWorkerInterface():
                     if job_data:
                         job_cmd['job_data'] = job_data
                         self.__current_job_cmds[job_data.get('job_id')] = job_cmd
-                if callback:
-                    self.__async_job_batch_request_callback_wrapper(callback, job_batch_data)
                 return job_batch_data
         else:
             self.awaiting_job_request = True
-            self.pool_executor.submit(self.job_batch_request, max_job_batch, True, callback, error_callback)
+            self.pool.apply_async(
+                self.job_batch_request,
+                args=[max_job_batch], 
+                callback=lambda result: self.__async_job_batch_request_callback_wrapper(callback, result),
+                error_callback=lambda response: self.__async_job_batch_request_error_callback_wrapper(callback, response)
+            )
 
 
     def job_request_generator(self, max_job_batch):
@@ -390,16 +365,15 @@ class APIWorkerInterface():
         """
 
         while True:
-            with self.lock:
-                remaining_job_batch = max_job_batch - len(self.__current_job_cmds)
-                if remaining_job_batch > 0 and not self.awaiting_job_request:
-                    self.job_batch_request(remaining_job_batch, wait_for_response=False, callback=self.__generator_callback)
+            remaining_job_batch = max_job_batch - len(self.__current_job_cmds)
+            if remaining_job_batch > 0 and not self.awaiting_job_request:
+                self.job_batch_request(remaining_job_batch, wait_for_response=False, callback=self.__generator_callback)
 
-                jobs_to_start = [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('awaiting_yield')]
-                for job_data in jobs_to_start:
-                    job_cmd = self.__current_job_cmds[job_data.get('job_id')]
-                    job_cmd['awaiting_yield'] = False
-                    self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
+            jobs_to_start = [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('awaiting_yield')]
+            for job_data in jobs_to_start:
+                job_cmd = self.__current_job_cmds[job_data.get('job_id')]
+                job_cmd['awaiting_yield'] = False
+                self.__current_job_cmds[job_data.get('job_id')] = job_cmd # SyncManager().dict() doesn't support direct assignment of nested dictionary value
             yield jobs_to_start
 
                 
@@ -438,48 +412,26 @@ class APIWorkerInterface():
                 job_id = job_id or job_data.get('job_id')
                 job_data = job_data or self.get_current_job_data(job_id)   
                 results = self.__prepare_output(results, job_data, True)
-
-                with self.lock:
-                    if job_id:
-                        self.__current_job_cmds.pop(job_id, None)
-                    else:
-                        self.__current_job_cmds.clear()
+                if job_id:
+                    self.__current_job_cmds.pop(job_id, None)
+                else:
+                    self.__current_job_cmds.clear()
                 results['auth_key'] = self.auth_key
                 results['job_type'] = self.job_type
                 while True:
                     try:
                         response =  self.__fetch('/worker_job_result', results)
                     except requests.exceptions.ConnectionError:
-                        self.check_periodically_if_server_online()
-                        continue
-                    except Exception as exception:
-                        if error_callback:
-                            error_callback(exception)
-                        else:
-                            raise exception
-
+                        print('Connection to server lost')
+                        return
                     if response.status_code == 200:
-                        if callback:
-                            callback(response)
+
                         return response
                     else:
-                        if error_callback:
-                            error_callback(exception)
                         self.check_periodically_if_server_online()
-                        continue
+                        return
         else:
-            self.pool_executor.submit(self.send_job_results, results, job_data, job_id, True, callback, error_callback)
-
-
-    def __job_result_callback(self, future, callback, error_callback):
-        try:
-            result = future.result()
-            if callback:
-                callback(result)
-            return result
-        except Exception as error:
-            if error_callback:
-                error_callback(error)
+            self.pool.apply_async(self.send_job_results,  args=[results, job_data, job_id], callback=callback, error_callback=error_callback)
 
 
     def send_progress(
@@ -510,13 +462,15 @@ class APIWorkerInterface():
         job_id = job_id or job_data.get('job_id') 
         job_data = job_data or self.get_current_job_data(job_id)
         if self.rank == 0 and self.progress_data_received and not self.__get_current_job_cmd(job_id).get('wait_for_result', False):           
-            payload = {
-                'job_id': job_data.get('job_id'), # if job_id is None for single jobs
-                'job_type': self.job_type,
-                'auth_key': self.auth_key,
-                'progress': progress,
-                'progress_data': self.__prepare_output(progress_data, job_data, False)
-            }
+            payload = {parameter: job_data[parameter] for parameter in SERVER_PARAMETERS}
+            payload.update(
+                {
+                    'job_type': self.job_type,
+                    'auth_key': self.auth_key,
+                    'progress': progress,
+                    'progress_data': self.__prepare_output(progress_data, job_data, False)
+                }
+            )
             self.progress_data_received = False
             _ = self.__fetch_async('/worker_job_progress', payload, progress_received_callback, progress_error_callback)
             self.update_job_activity(job_id)
@@ -551,15 +505,16 @@ class APIWorkerInterface():
         if self.rank == 0 and self.progress_data_received:
             batch_payload = []
             for progress, progress_data, job_data in zip(batch_progress, progress_batch_data, job_batch_data):
-                job_id = job_data.get('job_id')
-                if not self.__current_job_cmds.get(job_id).get('wait_for_result'):
-                    payload = {
-                        'job_id': job_id,
-                        'job_type': self.job_type,
-                        'auth_key': self.auth_key,
-                        'progress': progress, 
-                        'progress_data': self.__prepare_output(progress_data, job_data, False)
-                    }
+                if not self.__current_job_cmds.get(job_data.get('job_id')).get('wait_for_result'):
+                    payload = {parameter: job_data.get(parameter) for parameter in SERVER_PARAMETERS}
+                    payload.update(
+                        {
+                            'job_type': self.job_type,
+                            'auth_key': self.auth_key,
+                            'progress': progress, 
+                            'progress_data': self.__prepare_output(progress_data, job_data, False)
+                        }
+                    )
                     batch_payload.append(payload)
             self.progress_data_received = False
             _ = self.__fetch_async('/worker_job_progress', batch_payload, progress_received_callback, progress_error_callback)
@@ -671,8 +626,7 @@ class APIWorkerInterface():
         job_cmd = self.__current_job_cmds.get(job_id)
         if job_cmd:
             job_cmd['last_activity'] = time.time()
-            with self.lock:
-                self.__current_job_cmds[job_id] = job_cmd
+            self.__current_job_cmds[job_id] = job_cmd
 
 
     def have_all_jobs_finished(self):
@@ -711,6 +665,7 @@ class APIWorkerInterface():
             self.print_idle_string_thread.join()
         if APIWorkerInterface.barrier:
             APIWorkerInterface.barrier.wait()
+        self.pool.close()
         del self.__current_job_cmds
         APIWorkerInterface.manager.shutdown()
         if self.exit_callback:
@@ -755,7 +710,7 @@ class APIWorkerInterface():
         dot_string = self.dot_string_generator()
         print() # get cursor to next line
         while not self.__current_job_cmds:
-            print(f'\033[F\033[KWorker idling{next(dot_string)}')
+            print(f'\033[FWorker idling{next(dot_string)}')
             time.sleep(refresh_interval)
             if self.exit_event.is_set():
                 break
@@ -833,17 +788,6 @@ class APIWorkerInterface():
         
         return metadata
 
-    def get_binary(self, job_data, attrib):
-        base64_data = job_data.get(attrib, None)
-        if not base64_data:
-            return None
-        return base64.b64decode(base64_data.split(',')[1])
-    
-    def get_binary_format(self, job_data, attrib):
-        base64_data = job_data.get(attrib, None)
-        if not base64_data:
-            return None
-        return base64_data.split(',')[0]
 
     def get_exif_metadata(self, image, job_data):
         metadata = {str(parameter_name): job_data.get(parameter_name) for parameter_name in DEFAULT_IMAGE_METADATA}
@@ -859,7 +803,6 @@ class APIWorkerInterface():
 
     def __init_and_start_manager(self, port_offset=0):
         try:
-            self.port_offset = port_offset
             APIWorkerInterface.manager = WorkerSyncManager(("127.0.0.1", SYNC_MANAGER_BASE_PORT + port_offset), authkey=SYNC_MANAGER_AUTH_KEY)
             if self.rank == 0:
                 APIWorkerInterface.barrier = Barrier(self.world_size)
@@ -889,8 +832,14 @@ class APIWorkerInterface():
 
         Returns:
             str: name of the worker like <hostname>_<gpu_name>_<gpu_id> if gpu_name is given, , else <hostname>_GPU_<gpu_id>
-        """    
-        return f'{socket.gethostname()}#{self.port_offset}_{self.gpu_name}'
+        """        
+        worker_name = socket.gethostname()
+        for id in range(self.world_size):
+            if self.gpu_name:
+                worker_name += f'_{self.gpu_name}_{id+self.gpu_id}'
+            else:
+                worker_name += f'_GPU{id+self.gpu_id}'
+        return worker_name
 
 
     def __convert_output_types_to_string_representation(
@@ -937,7 +886,7 @@ class APIWorkerInterface():
 
 
     def __prepare_output(self, output_data, job_data, finished):
-        """Adds meta parameters to output_data. Converts parameters in output data from type 'image' and 'image_list' to base64 strings. 
+        """Adds SERVER_PARAMETERS to output_data. Converts parameters in output data from type 'image' and 'image_list' to base64 strings. 
         Adds [OUTPUT] parameters found in job_data[output_description/progress_description] to output_data
 
         Args:
@@ -952,14 +901,14 @@ class APIWorkerInterface():
             output_data = output_data.copy()
             output_data['version'] = self.version
             output_data['auth'] = self.worker_name
-            job_id = job_data.get('job_id')
             if finished:
-                output_data['job_id'] = job_id
+                for parameter in SERVER_PARAMETERS:
+                    output_data[parameter] = job_data.get(parameter)
                 output_data['job_type'] = self.job_type
                 mode = 'final'
             else:
                 mode = 'progress'
-            descriptions = self.__current_job_cmds.get(job_id, {}).get(f'{mode}_output_descriptions')
+            descriptions = self.__current_job_cmds.get(job_data.get('job_id'), {}).get(f'{mode}_output_descriptions')
             for output_name, output_description in descriptions.items():
                 self.__convert_output_types_to_string_representation(output_data, output_name, output_description, job_data)
                 if finished:
@@ -1079,7 +1028,7 @@ class APIWorkerInterface():
             print(output_str)
 
 
-    def __fetch(self, route, json=None, callback=None, error_callback=None):
+    def __fetch(self, route, json=None):
         """Send post request on given route on API server with given arguments
 
         Args:
@@ -1097,20 +1046,10 @@ class APIWorkerInterface():
         """
         try:
             response = requests.post(self.api_server + route, json=json, timeout=self.request_timeout)
-            if callback:
-                callback(response)
-            return response
-        except requests.Timeout as error:
-            if error_callback:
-                error_callback(error)
-            else:
-                raise requests.exceptions.ConnectionError
-        except Exception as error:
-            if error_callback:
-                error_callback(error)
-            else:
-                raise error
+        except requests.Timeout:
+            raise requests.exceptions.ConnectionError
 
+        return response
 
 
     def __fetch_async(
@@ -1131,8 +1070,7 @@ class APIWorkerInterface():
             self.__custom_callback = callback
         if error_callback:
             self.__custom_error_callback = error_callback
-        self.pool_executor.submit(self.__fetch, route, json, self.__async_fetch_callback, self.__async_fetch_error_callback)
-
+        self.pool.apply_async(self.__fetch, args=[route, json], callback=self.__async_fetch_callback, error_callback=self.__async_fetch_error_callback)
 
 
     def __async_fetch_callback(self, response):

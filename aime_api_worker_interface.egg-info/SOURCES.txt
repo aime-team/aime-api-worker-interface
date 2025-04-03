@@ -1,0 +1,13 @@
+LICENSE
+README.md
+setup.py
+aime_api_worker_interface/__init__.py
+aime_api_worker_interface/api_worker_interface.py
+aime_api_worker_interface/awi
+aime_api_worker_interface/download_weights.py
+aime_api_worker_interface.egg-info/PKG-INFO
+aime_api_worker_interface.egg-info/SOURCES.txt
+aime_api_worker_interface.egg-info/dependency_links.txt
+aime_api_worker_interface.egg-info/not-zip-safe
+aime_api_worker_interface.egg-info/requires.txt
+aime_api_worker_interface.egg-info/top_level.txt
