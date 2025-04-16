@@ -391,7 +391,8 @@ class APIWorkerInterface():
 
         while True:
             with self.lock:
-                remaining_job_batch = max_job_batch - len(self.__current_job_cmds)
+                num_running_jobs = len(self.__current_job_cmds)
+                remaining_job_batch = max_job_batch - num_running_jobs
                 if remaining_job_batch > 0 and not self.awaiting_job_request:
                     self.job_batch_request(remaining_job_batch, wait_for_response=False, callback=self.__generator_callback)
 
@@ -403,7 +404,7 @@ class APIWorkerInterface():
             yield jobs_to_start
 
                 
-            if self.have_all_jobs_finished():
+            if not num_running_jobs:
                 self.wait_for_job()
 
 
