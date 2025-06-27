@@ -158,7 +158,8 @@ class APIWorkerInterface():
         gpu_id=0, 
         world_size=1, 
         rank=0, 
-        gpu_name=None, 
+        gpu_name=None,
+        num_gpus=1,
         image_metadata_params=DEFAULT_IMAGE_METADATA,
         print_server_status = True,
         request_timeout = 60,
@@ -181,6 +182,7 @@ class APIWorkerInterface():
             world_size (int, optional): Number of used GPUs the worker runs on. Defaults to 1.
             rank (int, optional): ID of current GPU if world_size > 1. Defaults to 0.
             gpu_name (str, optional): Name of GPU the worker runs on. Defaults to None.
+            num_gpus (int, optional): Number of GPUs. Defaults to 1.
             image_metadata_params (list, optional): Parameters to add as metadata to images (Currently only 'PNG'). Defaults to [
                 'prompt', 'negative_prompt', 'seed', ...]
             print_server_status (bool, optional): Whether the server status is printed at start. Defaults to True
@@ -201,6 +203,7 @@ class APIWorkerInterface():
         self.world_size = world_size
         self.rank = rank
         self.gpu_name = gpu_name.replace(' ', '_')
+        self.num_gpus = num_gpus
         self.image_metadata_params = image_metadata_params
         self.print_server_status = print_server_status
         self.request_timeout = request_timeout
@@ -313,6 +316,8 @@ class APIWorkerInterface():
                         'auth_key': self.auth_key,
                         'version': self.version,
                         'worker_version': self.worker_version,
+                        'gpu_name': self.gpu_name,
+                        'num_gpus': self.num_gpus,
                         'request_timeout': self.request_timeout,
                         'model_label': self.model_label,
                         'model_quantization': self.model_quantization,
@@ -886,12 +891,12 @@ class APIWorkerInterface():
 
 
     def __make_worker_name(self):
-        """Make a name for the worker based on worker hostname gpu name and gpu id: 
+        """Make a name for the worker based on worker hostname, num_gpus and gpu_name: 
 
         Returns:
-            str: name of the worker like <hostname>_<gpu_name>_<gpu_id> if gpu_name is given, , else <hostname>_GPU_<gpu_id>
+            str: name of the worker like <hostname>#<counter>_<num_gpus>x<gpu_name>
         """    
-        return f'{socket.gethostname()}#{self.port_offset}_{self.gpu_name}'
+        return f'{socket.gethostname()}#{self.port_offset}_{self.num_gpus}x{self.gpu_name or "Unknown GPU"}'
 
 
     def __convert_output_types_to_string_representation(
