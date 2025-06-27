@@ -254,7 +254,7 @@ class APIWorkerInterface():
         return self.get_current_job_data()
 
 
-    def job_batch_request(self, max_job_batch, wait_for_response=True, callback=None, error_callback=None):
+    def job_batch_request(self, max_job_batch, wait_for_response=True, callback=None, error_callback=None, return_no_job=False):
         """Worker requests a job batch from API Server on endpoint route /worker_job_request.
 
         If there is no client job offer within the job_timeout = request_timeout * 0.9 the API server 
@@ -345,7 +345,11 @@ class APIWorkerInterface():
                         if cmd == 'job':
                             have_job = True
                         elif cmd == 'no_job':
-                            continue
+                            if return_no_job:
+                                have_job = True
+                                print('\r\033[1A', end='')
+                            else:
+                                continue
                         elif cmd == 'error':
                             print(response_output_str.format(cmd=cmd, msg=msg))
                             self.error_event.set()
@@ -380,7 +384,7 @@ class APIWorkerInterface():
                 return job_batch_data
         else:
             self.awaiting_job_request = True
-            self.pool_executor.submit(self.job_batch_request, max_job_batch, True, callback, error_callback)
+            self.pool_executor.submit(self.job_batch_request, max_job_batch, True, callback, error_callback, return_no_job)
 
 
     def job_request_generator(self, max_job_batch):
@@ -399,7 +403,12 @@ class APIWorkerInterface():
                 num_running_jobs = len(self.__current_job_cmds)
                 remaining_job_batch = max_job_batch - num_running_jobs
                 if remaining_job_batch > 0 and not self.awaiting_job_request:
-                    self.job_batch_request(remaining_job_batch, wait_for_response=False, callback=self.__generator_callback)
+                    self.job_batch_request(
+                        remaining_job_batch,
+                        wait_for_response=False,
+                        callback=self.__generator_callback,
+                        return_no_job=True
+                    )
 
                 jobs_to_start = [job_cmd.get('job_data') for job_cmd in self.__current_job_cmds.values() if job_cmd.get('awaiting_yield')]
                 for job_data in jobs_to_start:
