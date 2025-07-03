@@ -170,7 +170,10 @@ class APIWorkerInterface():
         model_size=None,
         model_family=None,
         model_type=None,
-        model_repo_name=None
+        model_repo_name=None,
+        framework=None,
+        framework_version=None,
+        pytorch_version=None
         ):
         """Constructor
 
@@ -215,6 +218,9 @@ class APIWorkerInterface():
         self.model_family = model_family
         self.model_type = model_type
         self.model_repo_name = model_repo_name
+        self.framework = framework
+        self.framework_version = framework_version
+        self.pytorch_version = pytorch_version
 
         self.progress_input_params = dict()
         self.awaiting_job_request = False
@@ -326,6 +332,9 @@ class APIWorkerInterface():
                         'model_type': self.model_type,
                         'model_repo_name': self.model_repo_name,
                         'max_job_batch': max_job_batch,
+                        'framework': self.framework,
+                        'framework_version': self.framework_version,
+                        'pytorch_version': self.pytorch_version
                     }
                     try:
                         response = self.__fetch('/worker_job_request', request)
