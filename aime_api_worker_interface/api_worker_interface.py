@@ -205,7 +205,7 @@ class APIWorkerInterface():
         self.gpu_id = gpu_id
         self.world_size = world_size
         self.rank = rank
-        self.gpu_name = gpu_name.replace(' ', '_')
+        self.gpu_name = gpu_name.replace(' ', '_') if gpu_name else ""
         self.num_gpus = num_gpus
         self.image_metadata_params = image_metadata_params
         self.print_server_status = print_server_status
