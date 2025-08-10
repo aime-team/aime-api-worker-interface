@@ -536,6 +536,7 @@ class APIWorkerInterface():
         if self.rank == 0 and self.progress_data_received and not self.__get_current_job_cmd(job_id).get('wait_for_result', False):           
             payload = {
                 'job_id': job_data.get('job_id'), # if job_id is None for single jobs
+                'auth': self.worker_name,		
                 'job_type': self.job_type,
                 'auth_key': self.auth_key,
                 'progress': progress,
